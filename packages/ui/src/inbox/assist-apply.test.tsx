@@ -213,6 +213,7 @@ describe('Apply on the suggestions', () => {
   it('shows rows an earlier apply left unfinished, line by line, with nothing to press', () => {
     const unfinished = [
       {
+        row: '2026-11-17T12:00:00 Inbox/Lunch with Tobias.md 1.1',
         title: 'Lunch with Tobias',
         lines: [
           'It was to do: Made it a task. Added Tobias Fenn.',
@@ -230,7 +231,26 @@ describe('Apply on the suggestions', () => {
     );
     const left = screen.getByRole('listitem', { name: 'Lunch with Tobias, left unfinished' });
     for (const line of unfinished[0]!.lines) expect(within(left).getByText(line)).toBeTruthy();
+    // Nothing repairs it: with no way to put it aside given, there is nothing to press.
     expect(within(left).queryByRole('button')).toBeNull();
     expect(screen.getByText('Left unfinished')).toBeTruthy();
+  });
+
+  it('puts an unfinished row aside, by its row, once the person has put it right', async () => {
+    const onPutAside = vi.fn<(row: string) => void>();
+    const row = '2026-11-17T12:00:00 Inbox/Lunch with Tobias.md 1.1';
+    render(
+      <AssistSummary
+        view={plan([])}
+        onDismiss={() => undefined}
+        unfinished={[
+          { row, title: 'Lunch with Tobias', lines: ['It was to do: Added Tobias Fenn.'] },
+        ]}
+        onPutAside={onPutAside}
+      />,
+    );
+    const left = screen.getByRole('listitem', { name: 'Lunch with Tobias, left unfinished' });
+    await userEvent.click(within(left).getByRole('button', { name: 'Put aside' }));
+    expect(onPutAside).toHaveBeenCalledWith(row);
   });
 });

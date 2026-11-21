@@ -133,12 +133,6 @@ interface FrontmatterWrite {
    * has moved on since is refused with `NoteChangedError` rather than written.
    */
   ifModified?: number;
-  /**
-   * The whole text the caller checked (#911). When given, a note that says
-   * anything else — an edit within the disk's timestamp tick included — is
-   * refused with `NoteChangedError` rather than written.
-   */
-  ifText?: string;
 }
 
 /**
@@ -176,7 +170,6 @@ async function writeChanges({
   path,
   values,
   ifModified,
-  ifText,
   read,
   settingsFile = false,
 }: FrontmatterWrite & {
@@ -190,7 +183,6 @@ async function writeChanges({
   const target = createVaultPath(path);
   const { text, modified } = await fs.readTextFile(target);
   if (ifModified !== undefined && ifModified !== modified) throw new NoteChangedError(target);
-  if (ifText !== undefined && ifText !== text) throw new NoteChangedError(target);
   const ownFile = settingsFile || isAtlasNote(target);
   if (ownFile && opensUnclosedFrontmatter(text)) throw new UnclosedFrontmatterError(target);
   const document = splitFrontmatter(text);

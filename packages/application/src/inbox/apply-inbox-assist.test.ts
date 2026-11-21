@@ -384,15 +384,18 @@ describe('applyAssistRow: a write that fails midway leaves no half-applied row',
     const applied = await v.apply(CALL, previewed);
     expect(applied).toMatchObject({
       kind: 'failed',
-      words: expect.stringContaining('It was left as the row changed it'),
+      words: expect.stringContaining('It could not be taken back'),
+      // Held, to be finished: the same path as an undo that stopped.
+      undo: { row: expect.any(String) },
     });
-    // What was left changed is in the log, so it is not lost.
-    expect(parseRunLog(v.files.get(LOG)!)).toEqual([
-      expect.objectContaining({
-        kind: 'failed',
-        done: [expect.objectContaining({ kind: 'assisted', from: CALL })],
-      }),
-    ]);
+    // The row stays open, its last step saying what is on disk: it is shown as left unfinished.
+    const entries = parseAssistLog(v.files.get(LOG)!);
+    expect(entries.at(-1)).toMatchObject({
+      kind: 'step',
+      done: [expect.objectContaining({ kind: 'assisted' })],
+    });
+    expect(parseRunLog(v.files.get(LOG)!)).toEqual([]);
+    expect(await findUnfinishedAssist(v.ports)).toHaveLength(1);
   });
 });
 
@@ -519,7 +522,7 @@ describe('undo', () => {
     const undone = await v.undo(applied);
     expect(undone).toEqual({
       kind: 'refused',
-      words: 'Not undone: it was changed since, so it was left as it is.',
+      words: 'Not undone: It was changed since, so it was left as it is.',
     });
     expect(v.files.get(applied.path)).toBe(edited);
     expect(v.files.has(CALL)).toBe(false);
@@ -807,16 +810,17 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     }
     appliedOf(await v.apply(LUNCH, previewed));
     expect(seen).toEqual([
-      `writeTextFile ${LUNCH} after [begun]`,
-      // The intent to make him logged before he is made, and his making right after.
-      'createNote People/Tobias Fenn.md after [begun,step]',
-      `writeTextFile ${LUNCH} after [begun,step,step]`,
+      // Every write logged as about to be made, just before it is; his making logged right after.
+      `writeTextFile ${LUNCH} after [begun,step]`,
+      'createNote People/Tobias Fenn.md after [begun,step,step]',
+      `writeTextFile ${LUNCH} after [begun,step,step,step,step]`,
     ]);
-    expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
+    // Begun, a step before each write and after the person made, then closed.
+    const kinds = parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind);
+    expect([kinds[0], kinds.at(-1), new Set(kinds.slice(1, -1))]).toEqual([
       'begun',
-      'step',
-      'step',
       'run',
+      new Set(['step']),
     ]);
   });
 
@@ -825,11 +829,12 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     const previewed = await v.preview();
     v.fail({ method: 'moveEntry', nth: 1 });
     expect((await v.apply(CALL, previewed)).kind).toBe('failed');
-    // Begun, about to move (the move that failed), closed.
-    expect(parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind)).toEqual([
+    // Begun, a step before each write (the move that failed and the rollback's), then closed.
+    const kinds = parseAssistLog(v.files.get(LOG)!).map((entry) => entry.kind);
+    expect([kinds[0], kinds.at(-1), new Set(kinds.slice(1, -1))]).toEqual([
       'begun',
-      'step',
       'failed',
+      new Set(['step']),
     ]);
     expect(await findUnfinishedAssist(v.ports)).toEqual([]);
   });
@@ -932,6 +937,7 @@ describe('review #911: a row leaves a trace before it writes (item 5)', () => {
     expect(await findUnfinishedAssist(v.ports)).toEqual([
       {
         title: 'Lunch with Tobias',
+        row,
         path: LUNCH,
         lines: [
           'It was to do: Made it a task. Added Tobias Fenn.',
@@ -1001,16 +1007,27 @@ describe('review #911 round 2: an undo that stops part-way says so, logs it, and
       throw new Error('the disk refused the move');
     };
     const partly = await v.undo(applied);
-    expect(partly).toEqual({
+    expect(partly).toMatchObject({
       kind: 'partly',
       words: `Partly undone: Call Mara is still at ${applied.path}. Undo again to finish.`,
+      undo: { progress: { itemRestored: true } },
     });
-    expect(parseRunLog(v.files.get(LOG)!).at(-1)).toMatchObject({
-      kind: 'undo',
-      left: [{ path: applied.path }],
+    // The row stays open — shown as left unfinished after a restart — what was done logged.
+    expect(parseAssistLog(v.files.get(LOG)!).at(-1)).toMatchObject({ kind: 'step' });
+    expect(await findUnfinishedAssist(v.ports)).toHaveLength(1);
+    expect(v.activity.reports.at(-1)).toMatchObject({
+      level: 'warning',
+      message: expect.stringContaining('could not undo'),
     });
     v.ports.fs.moveEntry = move;
-    expect(await v.undo(applied)).toMatchObject({ kind: 'undone' });
+    if (partly.kind !== 'partly') throw new Error('not partly undone');
+    const undone = await undoAssistRow(v.ports, { undo: partly.undo, notePaths: v.notePaths() });
+    expect(undone).toMatchObject({ kind: 'undone' });
+    expect(parseAssistLog(v.files.get(LOG)!).at(-1)).toMatchObject({
+      kind: 'undo',
+      row: applied.undo.row,
+    });
+    expect(await findUnfinishedAssist(v.ports)).toEqual([]);
     expect(notesBut(v.files)).toEqual(notesBut(before));
   });
 
@@ -1029,14 +1046,25 @@ describe('review #911 round 2: an undo that stops part-way says so, logs it, and
     const applied = await v.apply(CALL, previewed);
     expect(applied).toMatchObject({
       kind: 'failed',
-      words: expect.stringContaining('Partly undone'),
+      words: expect.stringContaining('Taking it back stopped part-way'),
+      undo: { progress: { itemRestored: true } },
     });
-    const closing = parseRunLog(v.files.get(LOG)!).at(-1)!;
-    expect(closing).toMatchObject({ kind: 'failed', done: [{ kind: 'assisted', from: CALL }] });
-    const assisted = closing.kind === 'failed' ? closing.done?.[0] : undefined;
-    const left = assisted?.kind === 'assisted' ? assisted.to : CALL;
-    expect(v.files.has(left)).toBe(true);
+    // Not closed: the row stays open with what is on disk, where the item still is.
+    const last = parseAssistLog(v.files.get(LOG)!).at(-1)!;
+    expect(last).toMatchObject({ kind: 'step' });
+    const where =
+      last.kind === 'step' ? last.done.find((each) => each.kind === 'assisted') : undefined;
+    const left = where?.kind === 'assisted' ? where.to : CALL;
     expect(left).not.toBe(CALL);
+    expect(v.files.get(left)).toBe(VAULT[CALL]);
+    expect(await findUnfinishedAssist(v.ports)).toHaveLength(1);
+    // And it can be finished, as any undo that stopped.
+    v.ports.fs.moveEntry = move;
+    if (applied.kind !== 'failed' || applied.undo === undefined) throw new Error('no undo held');
+    expect(
+      await undoAssistRow(v.ports, { undo: applied.undo, notePaths: v.notePaths() }),
+    ).toMatchObject({ kind: 'undone' });
+    expect(v.files.get(CALL)).toBe(VAULT[CALL]);
   });
 });
 
@@ -1080,6 +1108,242 @@ describe('review #911 round 2: a path as the vault spells it (item 7)', () => {
       words: `Not applied: the vault spells it ${CALL}. Nothing changed.`,
     });
     expect(reads).toBe(0);
+  });
+});
+
+/** The vault with a third note linking every item by path and an item linking itself: every write a filing makes. */
+const LINKED: Record<string, string> = {
+  ...VAULT,
+  [ARTICLE]: `${VAULT[ARTICLE]!}See [[Inbox/Payroll article]].\r\n`,
+  'Notes/Week.md':
+    'See [[Inbox/Call Mara]], [[Inbox/Payroll article|the article]], [[Inbox/Lunch with Tobias]] and [[Inbox/Renew Larkspur contract]].\n',
+};
+const ROW_KINDS = [CALL, ARTICLE, LUNCH, RENEW] as const;
+const WRITES = [
+  'writeTextFile',
+  'createNote',
+  'createFolder',
+  'moveEntry',
+  'trashEntry',
+  'writeBinaryFile',
+] as const;
+/** The log and the folders it lives in: written beside the guard, never a note. */
+const ofTheLog = (path: string) => path === '.atlas' || path.startsWith('.atlas/');
+
+/** Every host call, in order, with what the log said as it was made. */
+function watched(v: ReturnType<typeof setUp>) {
+  const calls: { method: string; args: Record<string, unknown>; log: string }[] = [];
+  const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+  for (const method of [...WRITES, 'readTextFile', 'readNotes'] as const) {
+    const inner = fs[method]!;
+    fs[method] = async (args: unknown) => {
+      const named = typeof args === 'string' ? { path: args } : (args as Record<string, unknown>);
+      calls.push({ method, args: named, log: v.files.get(LOG) ?? '' });
+      return inner(args);
+    };
+  }
+  return calls;
+}
+
+/** Each write to a note that escaped the guard: not logged first, not held to its text. Empty when none did. */
+function escapes(calls: ReturnType<typeof watched>): string[] {
+  const found: string[] = [];
+  calls.forEach(({ method, args, log }, at) => {
+    if (!(WRITES as readonly string[]).includes(method)) return;
+    const path = String(args['path'] ?? args['from']);
+    if (ofTheLog(path)) return;
+    const last = parseAssistLog(log).at(-1);
+    const about = last?.kind === 'step' ? last.about : undefined;
+    if (about === undefined || about.path !== path)
+      found.push(`${method} ${path}: not logged first`);
+    if (method === 'writeTextFile' && typeof args['expectedText'] !== 'string')
+      found.push(`${method} ${path}: not held to its text`);
+    if (method === 'trashEntry' && !Array.isArray(args['unchanged']))
+      found.push(`${method} ${path}: not held to its text`);
+    if (method === 'moveEntry') {
+      const before = calls
+        .slice(0, at)
+        .filter((each) => !ofTheLog(String(each.args['path'] ?? each.args['from'] ?? '')))
+        .at(-1);
+      if (before?.method !== 'readTextFile' || before.args['path'] !== path)
+        found.push(`${method} ${path}: source not read just before`);
+    }
+    if (method === 'writeBinaryFile') found.push(`${method} ${path}: never written by a row`);
+  });
+  return found;
+}
+
+/** Fails the `nth` write to a note (the log's own aside), whatever kind it is. */
+function failingWrite(v: ReturnType<typeof setUp>, nth: number) {
+  const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+  let count = 0;
+  for (const method of WRITES) {
+    const inner = fs[method]!;
+    fs[method] = async (args: unknown) => {
+      const named = args as Record<string, unknown>;
+      if (!ofTheLog(String(named['path'] ?? named['from']))) {
+        count += 1;
+        if (count === nth) throw new Error(`the disk refused write ${nth}`);
+      }
+      return inner(args);
+    };
+  }
+}
+
+describe('review #911 round 3: a rollback that keeps an edit takes out whom it made (7)', () => {
+  it('puts Tobias in the Trash and says so, the item back with the person’s edit', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const create = v.ports.fs.createNote;
+    // The person types into the item just after Tobias is made: the row's link to him is refused.
+    v.ports.fs.createNote = async (each) => {
+      const made = await create(each);
+      if (each.path.startsWith('People/')) v.files.set(LUNCH, `${v.files.get(LUNCH)!}Mine.\n`);
+      return made;
+    };
+    const applied = await v.apply(LUNCH, previewed);
+    expect(applied).toMatchObject({
+      kind: 'failed',
+      words: expect.stringContaining('Tobias Fenn was added, then taken out again (in the Trash).'),
+    });
+    // Kept as the person left it, what the row wrote before their edit included: never written over.
+    expect(v.files.get(LUNCH)).toMatch(/Mine\.\n$/u);
+    expect(applied.kind === 'failed' && applied.words).toContain('edit kept');
+    expect(v.files.has('People/Tobias Fenn.md')).toBe(false);
+    expect(await findUnfinishedAssist(v.ports)).toEqual([]);
+  });
+});
+
+describe('review #911 round 3: no write of a row escapes the one guarded path (A)', () => {
+  it('in every apply, every rollback after a failure at every position, and every undo', async () => {
+    let checked = 0;
+    for (const row of ROW_KINDS) {
+      // A clean apply and its undo, and how many writes the apply makes.
+      const clean = setUp(LINKED);
+      const previewed = await clean.preview();
+      const calls = watched(clean);
+      const applied = appliedOf(await clean.apply(row, previewed));
+      expect(await clean.undo(applied)).toMatchObject({ kind: 'undone' });
+      expect(escapes(calls).join(' | '), row).toBe('');
+      const writes = calls.filter(
+        ({ method, args }) =>
+          (WRITES as readonly string[]).includes(method) &&
+          !ofTheLog(String(args['path'] ?? args['from'])),
+      );
+      checked += writes.length;
+      // Each write of the apply failing in turn: the rollback's writes too go through the guard.
+      // Past the apply's own writes, the apply simply succeeds: harmless, and counted too.
+      for (let nth = 1; nth <= writes.length; nth += 1) {
+        const v = setUp(LINKED);
+        const again = await v.preview();
+        const seen = watched(v);
+        failingWrite(v, nth);
+        const outcome = await v.apply(row, again);
+        if (outcome.kind === 'failed' && outcome.undo !== undefined) {
+          await undoAssistRow(v.ports, { undo: outcome.undo, notePaths: v.notePaths() });
+        }
+        expect(escapes(seen), `${row}, write ${nth} failing`).toEqual([]);
+        checked += seen.filter(({ method }) =>
+          (WRITES as readonly string[]).includes(method),
+        ).length;
+      }
+    }
+    // The test is about something: it looked at many writes.
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it('would catch a write made around the guard', async () => {
+    const v = setUp(LINKED);
+    const previewed = await v.preview();
+    const calls = watched(v);
+    appliedOf(await v.apply(CALL, previewed));
+    // A write a use-case made straight to the port, not logged first nor held: caught.
+    await v.ports.fs.writeTextFile({
+      path: createVaultPath('Notes/Week.md'),
+      contents: 'x\n',
+      expectedModified: null,
+    });
+    expect(escapes(calls)).toEqual([
+      'writeTextFile Notes/Week.md: not logged first',
+      'writeTextFile Notes/Week.md: not held to its text',
+    ]);
+  });
+});
+
+describe('review #911 round 3: a person’s edit, at any moment of a row, is never lost (11)', () => {
+  it('apply and undo, an edit landing at every host call, on the item or a note linking it: exact bytes', async () => {
+    let cases = 0;
+    for (const row of ROW_KINDS) {
+      // What a clean apply of the row leaves each note saying: an applied row whose undo was refused stays so.
+      const clean = setUp(LINKED);
+      appliedOf(await clean.apply(row, await clean.preview()));
+      const appliedState = clean.snapshot();
+      for (const target of ['item', 'Notes/Week.md'] as const) {
+        for (const phase of ['apply', 'undo'] as const) {
+          for (let k = 1; ; k += 1) {
+            const v = setUp(LINKED);
+            const before = v.snapshot();
+            const previewed = await v.preview();
+            let applied: AssistApplied | null = null;
+            if (phase === 'undo') applied = await v.apply(row, previewed);
+            if (phase === 'undo' && applied?.kind !== 'applied')
+              throw new Error(`${row} did not apply`);
+            // Where the item is, as the row moves it; and the edit, made once, after host call k.
+            let itemAt: string =
+              phase === 'undo' && applied?.kind === 'applied' ? applied.path : row;
+            let calls = 0;
+            let edited: { path: string; text: string } | null = null;
+            const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+            for (const method of [...WRITES, 'readTextFile', 'readNotes'] as const) {
+              const inner = fs[method]!;
+              fs[method] = async (args: unknown) => {
+                const answer = await inner(args);
+                const named =
+                  typeof args === 'string' ? { path: args } : (args as Record<string, unknown>);
+                if (method === 'moveEntry' && named['from'] === itemAt)
+                  itemAt = String(named['to']);
+                if (
+                  ofTheLog(
+                    String(named['path'] ?? named['from'] ?? (Array.isArray(args) ? args[0] : '')),
+                  )
+                )
+                  return answer;
+                calls += 1;
+                if (calls === k && edited === null) {
+                  const path = target === 'item' ? itemAt : target;
+                  const text = `${v.files.get(path)!}Mine.\n`;
+                  v.files.set(path, text);
+                  edited = { path, text };
+                }
+                return answer;
+              };
+            }
+            if (phase === 'apply') {
+              applied = await v.apply(row, previewed);
+              if (applied.kind === 'applied') await v.undo(applied).catch(() => undefined);
+            } else if (applied?.kind === 'applied') {
+              await v.undo(applied);
+            }
+            if (edited === null) break;
+            cases += 1;
+            const { path, text } = edited;
+            const where = `${row}, ${target}, ${phase}, after call ${k}`;
+            // The person's edit is exactly as they left it: never written over, never undone away.
+            expect(
+              v.files.get(path) ?? [...v.files.values()].find((each) => each === text),
+              where,
+            ).toBe(text);
+            // Every note no one edited is exactly as it was before the row, or exactly as a clean apply leaves it.
+            for (const [note, bytes] of notesBut(v.files)) {
+              if (note === path || bytes === text || !before.has(note)) continue;
+              const fine = before.get(note) === bytes || appliedState.get(note) === bytes;
+              expect(fine, `${where}: ${note}`).toBe(true);
+            }
+          }
+        }
+      }
+    }
+    expect(cases).toBeGreaterThan(250);
   });
 });
 
