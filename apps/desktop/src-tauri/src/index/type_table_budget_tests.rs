@@ -22,33 +22,33 @@ WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND lower(trim(value_
 const MEETING_TABLE: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
 WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
-  ORDER BY "title" ASC, "path" ASC
+  ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
-ORDER BY "title" ASC, "path" ASC"#;
+ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 
 /// The table after a click on Date's header, twice: newest first.
 const MEETING_TABLE_BY_DATE: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
 WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
-  ORDER BY "date" DESC, "path" ASC
+  ORDER BY NULLIF("date", '') DESC NULLS LAST, "path" ASC
   LIMIT ?)
-ORDER BY "date" DESC, "path" ASC"#;
+ORDER BY NULLIF("date", '') DESC NULLS LAST, "path" ASC"#;
 
 /// A saved view of the meetings someone was in, by start time.
 const MEETING_TABLE_FILTERED: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
 WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "people" LIKE '%' || ? || '%'
-  ORDER BY "start" ASC, "path" ASC
+  ORDER BY NULLIF("start", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
-ORDER BY "start" ASC, "path" ASC"#;
+ORDER BY NULLIF("start", '') ASC NULLS LAST, "path" ASC"#;
 
 /// The table after a click on People's header, twice: a list column, sorted by its joined cell.
 const MEETING_SORT_BY_PEOPLE: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
 WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
-  ORDER BY "people" DESC, "path" ASC
+  ORDER BY NULLIF("people", '') DESC NULLS LAST, "path" ASC
   LIMIT ?)
-ORDER BY "people" DESC, "path" ASC"#;
+ORDER BY NULLIF("people", '') DESC NULLS LAST, "path" ASC"#;
 
 /// The sidebar's count of a quick view over meetings, and a dashboard's number widget.
 const MEETING_COUNT: &str = r#"SELECT COUNT(*) AS "value"

@@ -81,7 +81,12 @@ function mainTypeViewSelectSql(spec: TypeViewSpec): string {
 const PAGE_FIRST =
   /^(SELECT [^\n]*)\nFROM ("v_\w+")\nWHERE "path" IN \(SELECT "path" FROM \2 (WHERE [^\n]*)\n {2}(ORDER BY [^\n]*)\n {2}LIMIT \?\)\n\4$/;
 
-/** main's page of rows: the new statement's own parts in one pass, as main wrote them. */
+/**
+ * main's page of rows: the new statement's own parts in one pass, as main wrote
+ * them. The ORDER BY is the new statement's, so both sides sort by the same
+ * rule — blanks last either way since #913 — and only the page-first rewrite
+ * is compared.
+ */
 function mainRowSql(sql: string): string {
   const parts = PAGE_FIRST.exec(sql);
   if (parts === null) return sql; // counts, charts and aggregates were never changed
@@ -414,7 +419,7 @@ describe('a type table answers as it did before #919', () => {
         'SELECT "path", "title", "status"',
         'FROM "v_task"',
         `WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "status" IS ?`,
-        'ORDER BY "due" DESC, "path" ASC',
+        `ORDER BY NULLIF("due", '') DESC NULLS LAST, "path" ASC`,
         'LIMIT ?',
       ].join('\n'),
     );
