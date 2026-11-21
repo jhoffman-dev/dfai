@@ -7,6 +7,14 @@
   box-sizing: border-box;
 }
 
+/* The graph takes the main pane's full height, so the page is a column the graph can fill. */
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .page-title {
   margin: 0 0 var(--space-4);
   font-size: var(--text-title);

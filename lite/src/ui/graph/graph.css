@@ -10,7 +10,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2, 8px);
-  height: 100%;
+  /* Fills what the page leaves below its title; never sized by the drawing inside. */
+  flex: 1;
   min-height: 0;
   padding: var(--space-3, 12px) var(--space-4, 16px);
   color: var(--ink, #222);
@@ -108,6 +109,7 @@
 }
 
 .graph__stage {
+  position: relative;
   flex: 1;
   min-height: 320px;
   border: 1px solid var(--line, #ddd);
@@ -116,6 +118,9 @@
 }
 
 .graph__surface {
+  /* Out of flow, so the size the canvas measures and draws to cannot feed back into the stage. */
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -190,6 +195,8 @@
 }
 
 .graph__list {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 

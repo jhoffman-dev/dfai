@@ -190,6 +190,8 @@ function useGestures({
     startDrag: (event: PointerEvent<SVGGElement>, node: GraphNode) => {
       event.stopPropagation();
       capture(event);
+      // Hold the fitted view still: refitting while a note is dragged would move the ground under it.
+      setView(view);
       gesture.current = {
         kind: 'drag',
         node,

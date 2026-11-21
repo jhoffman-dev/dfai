@@ -57,6 +57,10 @@ test('the core loop: new note, link, favourite, search, tags, graph', async ({ p
   await expect(page.getByRole('region', { name: 'Graph' })).toBeVisible();
   await expect(page.locator('.graph__dot').first()).toBeVisible();
   expect(await page.locator('.graph__dot').count()).toBeGreaterThan(10);
+  // Drawn where it can be seen: the surface fits the window, not its own content.
+  await expect(page.locator('.graph__dot').first()).toBeInViewport();
+  const surface = await page.locator('.graph__surface').boundingBox();
+  expect(surface?.height ?? Infinity).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0);
 });
 
 test('#/new opens straight into a blank note', async ({ page }) => {
