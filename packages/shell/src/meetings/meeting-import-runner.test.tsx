@@ -15,6 +15,7 @@ import {
   recordingActivity,
   type MeetingImportPorts,
   type RuleQueryPorts,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createAutomationsStore } from '../automations/automations-store.ts';
@@ -113,9 +114,12 @@ function mount(enabled: boolean) {
     onWritten: () => undefined,
   } as const;
   // The index is seen building, then ready, as a vault opening has it.
-  const view = render(<MeetingImportRunner {...props} indexReady={false} enabled={enabled} />);
-  view.rerender(<MeetingImportRunner {...props} enabled={enabled} />);
-  const switchTo = (on: boolean) => view.rerender(<MeetingImportRunner {...props} enabled={on} />);
+  const view = render(
+    <MeetingImportRunner {...props} indexReady={false} enabled={workSwitch(enabled)} />,
+  );
+  view.rerender(<MeetingImportRunner {...props} enabled={workSwitch(enabled)} />);
+  const switchTo = (on: boolean) =>
+    view.rerender(<MeetingImportRunner {...props} enabled={workSwitch(on)} />);
   return { written, changes, waiting, switchTo };
 }
 

@@ -251,12 +251,23 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
 export type EntryPointsOffered = Readonly<Record<EntryPoint, boolean>>;
 
+declare const WORK_SWITCH: unique symbol;
+
+/**
+ * Whether one piece of work of a switchable feature may start, as only
+ * `workOffered` hands it out (#920): a boolean the runners take for their
+ * `enabled`, so one cannot be fed from `offered.*` — which does not wait for
+ * the vault's settings — or from a literal. Tests make one with `workSwitch`
+ * from the test support, and only there.
+ */
+export type WorkSwitch = boolean & { readonly [WORK_SWITCH]: true };
+
 /**
  * Whether each piece of work of a switchable feature may start: only the work
- * entries, so a runner's `enabled` is read from what waits for the settings,
- * and a row's or a page's cannot be.
+ * entries, each a `WorkSwitch`, so a runner's `enabled` is read from what
+ * waits for the settings, and a row's or a page's cannot be.
  */
-export type WorkOffered = Pick<EntryPointsOffered, WorkEntry>;
+export type WorkOffered = { readonly [Entry in WorkEntry]: WorkSwitch };
 
 /** Every entry point, in the order they are listed. */
 export const ENTRY_POINTS = Object.freeze(Object.keys(NEEDS) as EntryPoint[]);
@@ -311,7 +322,7 @@ export function offeredWithFeatures(
 }
 
 /** Each object held, by the object it came from: the same `offered` is always held as the same object. */
-const heldUntilAnswered = new WeakMap<EntryPointsOffered, WorkOffered>();
+const heldUntilAnswered = new WeakMap<EntryPointsOffered, EntryPointsOffered>();
 
 /**
  * What work that starts by itself may start: `offered` once the vault's
@@ -323,16 +334,21 @@ export function workOffered(
   offered: EntryPointsOffered,
   { answered }: { answered: boolean },
 ): WorkOffered {
-  if (answered) return offered;
-  let held = heldUntilAnswered.get(offered);
-  if (held === undefined) {
-    held = Object.freeze({
-      ...offered,
-      ...Object.fromEntries([...STARTS_WORK].map((entry) => [entry, false])),
-    });
+  let held = offered;
+  if (!answered) {
+    held = heldUntilAnswered.get(offered) ?? heldFor(offered);
     heldUntilAnswered.set(offered, held);
   }
-  return held;
+  // The one place a WorkSwitch is made: each work entry, as waited for here.
+  return held as unknown as WorkOffered;
+}
+
+/** `offered` with every work entry held off. */
+function heldFor(offered: EntryPointsOffered): EntryPointsOffered {
+  return Object.freeze({
+    ...offered,
+    ...Object.fromEntries([...STARTS_WORK].map((entry) => [entry, false])),
+  });
 }
 
 /**

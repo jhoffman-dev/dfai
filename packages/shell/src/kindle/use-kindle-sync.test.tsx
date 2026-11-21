@@ -9,7 +9,7 @@ import {
   type KindleSyncRecord,
   type KindleSyncReport,
 } from '@dfai/domain';
-import { fakeIndexPort, fakeVaultFs, type KindleSync } from '@dfai/application';
+import { fakeIndexPort, fakeVaultFs, type KindleSync, workSwitch } from '@dfai/application';
 import { useKindleSync, type KindleHost, type KindleWindowOptions } from './use-kindle-sync.ts';
 
 const START = Date.UTC(2026, 9, 22, 9, 0);
@@ -85,7 +85,7 @@ function optionsFor(
     vaultKey: VAULT,
     indexReady: true,
     onWrote: () => {},
-    enabled: true,
+    enabled: workSwitch(true),
     ...overrides,
   };
 }
@@ -247,7 +247,7 @@ describe('useKindleSync, a vault the person has not turned it on for (ADR-0044)'
     const { rerender } = render(kindle);
     await settle();
     expect(calls).toEqual(['sync']);
-    rerender(optionsFor(kindle, { enabled: false }));
+    rerender(optionsFor(kindle, { enabled: workSwitch(false) }));
     await act(async () => {
       vi.advanceTimersByTime(KINDLE_AUTO_SYNC_INTERVAL_MS * 2);
     });
@@ -278,7 +278,7 @@ describe('useKindleSync, a vault the person has not turned it on for (ADR-0044)'
 
   it('syncs nothing on asking while Kindle is switched off, and says nothing', async () => {
     const { kindle, calls } = host(SYNCED, CONNECTED);
-    const { result } = render(kindle, { enabled: false });
+    const { result } = render(kindle, { enabled: workSwitch(false) });
     await settle();
     act(() => result.current.syncNow());
     act(() => result.current.connect());

@@ -12,6 +12,7 @@ import {
   type GranolaKeyStatus,
   type GranolaPullRecord,
   type GranolaPullRecords,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { settles } from '@dfai/ui/testing/settles';
@@ -81,7 +82,7 @@ function setUp({
   const records = memoryRecords();
   const options: GranolaPullOptions = {
     reachable: true,
-    enabled: true,
+    enabled: workSwitch(true),
     granola: {
       ...granola.port,
       status: async () => status.current,

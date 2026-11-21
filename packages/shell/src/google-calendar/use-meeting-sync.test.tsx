@@ -9,6 +9,7 @@ import {
   memoryMeetingSyncRecords,
   recordingActivity,
   GoogleCalendarError,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
@@ -74,6 +75,7 @@ function setUp({
     },
   });
   const options: MeetingSyncOptions = {
+    enabled: workSwitch(true),
     meetings: offered
       ? {
           source: google.source,
@@ -243,12 +245,12 @@ describe('useMeetingSync (ADR-0046)', () => {
     expect(google.state.asked).toHaveLength(2);
   });
 
-  it('stops with Meetings switched off — its ports taken away — and syncs again when it is back on (#901)', async () => {
+  it('stops with Meetings switched off, and syncs again when it is back on (#901)', async () => {
     const { hook, google, options } = setUp();
     await settle();
     expect(google.state.asked).toHaveLength(1);
-    // The window hands no ports with Meetings off (`working.meetingSync`).
-    hook.rerender({ ...options, meetings: null });
+    // The window hands Meetings' switch from `working.meetingSync`.
+    hook.rerender({ ...options, enabled: workSwitch(false) });
     await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS * 2));
     await settle();
     expect(google.state.asked).toHaveLength(1);
@@ -274,7 +276,7 @@ describe('useMeetingSync (ADR-0046)', () => {
       return listEvents(ask);
     };
     await settle();
-    hook.rerender({ ...options, meetings: null });
+    hook.rerender({ ...options, enabled: workSwitch(false) });
     release();
     await settle();
     expect(google.state.asked).toHaveLength(1);

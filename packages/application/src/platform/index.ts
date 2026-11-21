@@ -15,6 +15,12 @@ export {
   STARTS_WORK,
   workOffered,
 } from './entry-points.ts';
-export type { EntryPoint, EntryPointsOffered, WorkEntry, WorkOffered } from './entry-points.ts';
+export type {
+  EntryPoint,
+  EntryPointsOffered,
+  WorkEntry,
+  WorkOffered,
+  WorkSwitch,
+} from './entry-points.ts';
 export { platformLimits } from './platform-limits.ts';
 export type { PlatformLimit } from './platform-limits.ts';

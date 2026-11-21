@@ -1,6 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MeetingsWaiting } from '@dfai/domain';
-import { createRulesTakeCache, type RuleQueryPorts, type RunClock } from '@dfai/application';
+import {
+  createRulesTakeCache,
+  type RuleQueryPorts,
+  type RunClock,
+  type WorkSwitch,
+} from '@dfai/application';
 import type { AutomationsStore } from '../automations/automations-store.ts';
 import { useSyncForRunners, type SyncStore } from '../sync/sync-store.ts';
 import {
@@ -34,7 +39,7 @@ export type MeetingImportRunnerProps = Omit<
    * until the vault's settings answer. Off, this Mac imports nothing, as one
    * that does not run the automations, and says nothing waits for another.
    */
-  readonly enabled: boolean;
+  readonly enabled: WorkSwitch;
 };
 
 /**

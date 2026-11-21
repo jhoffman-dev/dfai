@@ -6,7 +6,7 @@
  * only the work entries, so a runner's `enabled` cannot be read from a row.
  */
 import { describe, expectTypeOf, it } from 'vitest';
-import type { EntryPoint, WorkEntry, WorkOffered } from './entry-points.ts';
+import type { EntryPoint, WorkEntry, WorkOffered, WorkSwitch } from './entry-points.ts';
 
 describe('the work entries, at compile time', () => {
   it('are exactly the runners, timers and listeners of a switchable feature', () => {
@@ -30,5 +30,12 @@ describe('the work entries, at compile time', () => {
     expectTypeOf<WorkOffered['backgroundSync']>().toBeBoolean();
     // @ts-expect-error time blocks share Google's sign-in with Meetings, but are not Meetings'.
     expectTypeOf<WorkOffered['blockSync']>().toBeBoolean();
+  });
+
+  it('hands each piece of work a WorkSwitch, which no bare boolean is (#920)', () => {
+    expectTypeOf<WorkOffered['kindleSync']>().toEqualTypeOf<WorkSwitch>();
+    expectTypeOf<WorkSwitch>().toMatchTypeOf<boolean>();
+    // @ts-expect-error a literal, or `offered.*`, cannot switch a runner: only `working` can.
+    expectTypeOf<boolean>().toMatchTypeOf<WorkSwitch>();
   });
 });

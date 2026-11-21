@@ -6,6 +6,7 @@ import {
   type CapturePorts,
   type SlackMessagePreview,
   type SlackPort,
+  type WorkSwitch,
 } from '@dfai/application';
 import type { SlackOfferView } from '@dfai/ui';
 import { problemOf } from './slack-offer-state.ts';
@@ -62,7 +63,7 @@ const NOTHING_HELD: Held = { vault: null, preview: null, saving: false, saved: n
  * writes its note, but neither its result nor a failure is shown, as the
  * offer it answers has gone (`dismiss` moved past it).
  */
-export function useSlackPaste(ports: SlackPastePorts, enabled: boolean): SlackPaste {
+export function useSlackPaste(ports: SlackPastePorts, enabled: WorkSwitch): SlackPaste {
   const [offered, setOffered] = useState<Offered | null>(null);
   const held = useRef<Held>(NOTHING_HELD);
   /** Shows `view` as the offer made in the vault the paste was in. */

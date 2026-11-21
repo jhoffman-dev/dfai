@@ -10,6 +10,7 @@ import {
   recordingActivity,
   GoogleCalendarError,
   type CalendarSource,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
@@ -57,6 +58,7 @@ function setUp(source: CalendarSource) {
     createNote: async () => 1,
   });
   const options: MeetingSyncOptions = {
+    enabled: workSwitch(true),
     meetings: { source, records },
     fs,
     markdown: remarkMarkdown,

@@ -17,6 +17,7 @@ import {
   type IndexPort,
   type MarkdownPort,
   type VaultFsPort,
+  type WorkSwitch,
 } from '@dfai/application';
 import { errorMessage } from '../query/error-message.ts';
 import { useVaultSettingsRead } from '../settings/use-vault-settings-read.ts';
@@ -66,7 +67,7 @@ export interface GranolaPullOptions {
    * under way finishes. Whether a key is held is still asked of the host as
    * the vault opens, as ever: that asks Granola nothing, and the key is kept.
    */
-  readonly enabled: boolean;
+  readonly enabled: WorkSwitch;
 }
 
 export interface GranolaPullController {

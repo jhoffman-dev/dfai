@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect } from 'react';
-import { AUTOMATIONS_SCOPE } from '@dfai/application';
+import { AUTOMATIONS_SCOPE, type WorkSwitch } from '@dfai/application';
 import type { IndexStatusStore } from '../index/index-status-store.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import type { AutomationRelay } from '../api/automation-relay.ts';
@@ -29,7 +29,7 @@ export type AutomationsRunnerProps = Omit<
    * Whether Automations is switched on (#901, `working.automationsRunner`):
    * held off until the vault's settings have answered.
    */
-  readonly enabled: boolean;
+  readonly enabled: WorkSwitch;
   /** Whether the vault's settings have answered, so `enabled` off means switched off. */
   readonly featuresKnown: boolean;
 };

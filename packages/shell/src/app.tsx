@@ -890,7 +890,8 @@ function AppWindow({
   const meetingsWrittenHere = useAutomationsHere(syncStore, meetingsOn ? vaultKey : null);
   // Meetings switched off (#901), none are read: a sync under way stops between meetings, as its Stop does.
   const meetingSync = useMeetingSync({
-    meetings: working.meetingSync && meetingsWrittenHere ? (meetingPorts ?? null) : null,
+    enabled: working.meetingSync,
+    meetings: meetingsWrittenHere ? (meetingPorts ?? null) : null,
     fs: vault.fs,
     markdown: notes.markdown,
     index: index.index,

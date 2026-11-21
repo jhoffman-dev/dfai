@@ -19,6 +19,7 @@ import {
   recordingActivity,
   type AutomationPorts,
   type EntryPointsOffered,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createIndexStatusStore } from '../index/index-status-store.ts';
@@ -154,7 +155,7 @@ function mountRunner(
   vault: ReturnType<typeof memoryVault>,
   live = false,
   /** The Automations switch as the window first hands it (#901): on, the settings read. */
-  switched: Switched = { enabled: true, featuresKnown: true },
+  switched: Switched = { enabled: workSwitch(true), featuresKnown: true },
 ) {
   const status = createIndexStatusStore();
   status.setState({ vault: VAULT, phase: 'ready', revision: 1 });
@@ -350,9 +351,9 @@ describe('the automations runner (#326)', () => {
 });
 
 describe('the Automations switch (#901)', () => {
-  const OFF_UNREAD: Switched = { enabled: false, featuresKnown: false };
-  const OFF: Switched = { enabled: false, featuresKnown: true };
-  const ON: Switched = { enabled: true, featuresKnown: true };
+  const OFF_UNREAD: Switched = { enabled: workSwitch(false), featuresKnown: false };
+  const OFF: Switched = { enabled: workSwitch(false), featuresKnown: true };
+  const ON: Switched = { enabled: workSwitch(true), featuresKnown: true };
   const archived = (files: Record<string, string>) => files['Archive/Tasks/A.md'] !== undefined;
 
   it('sets off no rule for a vault whose settings switch it off, before the read answers or after', async () => {

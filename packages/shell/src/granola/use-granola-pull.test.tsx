@@ -12,6 +12,7 @@ import {
   type GranolaKeyStatus,
   type GranolaPullRecord,
   type GranolaPullRecords,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { drained, settles } from '@dfai/ui/testing/settles';
@@ -93,7 +94,7 @@ function setUp({
   const records = memoryRecords();
   const options: GranolaPullOptions = {
     reachable,
-    enabled,
+    enabled: workSwitch(enabled),
     granola: {
       ...granola.port,
       status: async () => {
@@ -140,7 +141,7 @@ afterEach(() => vi.useRealTimers());
 
 describe('useGranolaPull', () => {
   it('asks nothing of Granola and pulls nothing where the platform has none (#657)', async () => {
-    const { hook, lists, asked } = setUp({ reachable: false, enabled: false });
+    const { hook, lists, asked } = setUp({ reachable: false, enabled: workSwitch(false) });
     await fifteenMinutes();
     await fifteenMinutes();
     expect(asked.count).toBe(0);
@@ -415,7 +416,7 @@ describe('useGranolaPull', () => {
   });
 
   it('pulls nothing with Meetings off, on opening or on the clock, though the key is asked after (#901)', async () => {
-    const { hook, lists, asked } = setUp({ enabled: false });
+    const { hook, lists, asked } = setUp({ enabled: workSwitch(false) });
     await settles(() => expect(asked.count).toBe(1));
     await fifteenMinutes();
     await fifteenMinutes();
@@ -426,13 +427,13 @@ describe('useGranolaPull', () => {
   it('stops pulling on the clock once Meetings is switched off, and pulls again when it is back on (#901)', async () => {
     const { hook, lists, options } = setUp();
     await settles(() => expect(lists()).toBe(1));
-    hook.rerender({ ...options, enabled: false });
+    hook.rerender({ ...options, enabled: workSwitch(false) });
     await fifteenMinutes();
     await fifteenMinutes();
     expect(lists()).toBe(1);
 
     // On again, without the app starting over: a pull as on opening, then the clock's.
-    hook.rerender({ ...options, enabled: true });
+    hook.rerender({ ...options, enabled: workSwitch(true) });
     await settles(() => expect(lists()).toBe(2));
     await fifteenMinutes();
     await settles(() => expect(lists()).toBe(3));
@@ -444,7 +445,7 @@ describe('useGranolaPull', () => {
     gate.current = listing.promise;
     await settles(() => expect(lists()).toBe(0));
     await act(async () => {});
-    hook.rerender({ ...options, enabled: false });
+    hook.rerender({ ...options, enabled: workSwitch(false) });
     listing.settle();
     await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));
     await fifteenMinutes();
