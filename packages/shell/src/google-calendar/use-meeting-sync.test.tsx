@@ -52,10 +52,13 @@ function setUp({
   indexReady = true,
   offered = true,
   grant,
+  on = true,
 }: {
   settings?: string;
   indexReady?: boolean;
   offered?: boolean;
+  /** Meetings' switch, as `working.meetingSync` hands it (#901). */
+  on?: boolean;
   /** This Mac's scopes, as the host's status says them; left out, the host is not asked. */
   grant?: { scopes: string[] };
 } = {}) {
@@ -74,8 +77,10 @@ function setUp({
       return 1;
     },
   });
+  // Each time this Mac's sign-in is asked what it may read.
+  const grantsAsked: string[] = [];
   const options: MeetingSyncOptions = {
-    enabled: workSwitch(true),
+    enabled: workSwitch(on),
     meetings: offered
       ? {
           source: google.source,
@@ -84,11 +89,10 @@ function setUp({
             ? {}
             : {
                 connection: {
-                  status: async () => ({
-                    connected: true,
-                    clientId: CLIENT_ID,
-                    scopes: grant.scopes,
-                  }),
+                  status: async () => {
+                    grantsAsked.push(VAULT);
+                    return { connected: true, clientId: CLIENT_ID, scopes: grant.scopes };
+                  },
                 },
               }),
         }
@@ -107,7 +111,7 @@ function setUp({
     wrapper: queryWrapper().wrapper,
     initialProps: options,
   });
-  return { hook, google, kept, created, activity, onWrote, options };
+  return { hook, google, kept, created, activity, onWrote, options, grantsAsked };
 }
 
 /** Lets the settings read and a sync under way settle. */
@@ -262,6 +266,28 @@ describe('useMeetingSync (ADR-0046)', () => {
     await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
     await settle();
     expect(google.state.asked).toHaveLength(3);
+  });
+
+  it('asks Google nothing on Sync now with Meetings off — the card is drawn before the settings answer (#920)', async () => {
+    const { hook, google, created, options, grantsAsked } = setUp({
+      on: false,
+      grant: { scopes: [READS_EVENTS] },
+    });
+    await settle();
+    // Sync now, and the step after the sign-in is allowed to read meetings, which calls it too.
+    act(() => hook.result.current.syncNow());
+    await settle();
+    expect(grantsAsked).toEqual([]);
+    expect(google.state.asked).toEqual([]);
+    expect(created).toEqual([]);
+
+    // On, as on main: the clock's sync, then Sync now, each read the calendar.
+    hook.rerender({ ...options, enabled: workSwitch(true) });
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    act(() => hook.result.current.syncNow());
+    await settle();
+    expect(google.state.asked).toHaveLength(2);
   });
 
   it('writes nothing more once Meetings goes off while a sync is under way (#901)', async () => {
