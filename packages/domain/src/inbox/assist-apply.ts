@@ -101,8 +101,8 @@ export function assistApplyKinds(step: AssistApplyStep): AssistApplyKind[] {
   if (step.duplicateOf !== null) return ['duplicate'];
   const kinds: AssistApplyKind[] = [];
   if (step.fill?.makeTask === true) kinds.push('task');
-  if (step.fill?.due != null) kinds.push('due');
-  if (step.fill?.project != null) kinds.push('file');
+  if ((step.fill?.due ?? null) !== null) kinds.push('due');
+  if ((step.fill?.project ?? null) !== null) kinds.push('file');
   if (step.links.length > 0) kinds.push('link-person');
   if (step.adds.length > 0) kinds.push('add-person');
   return kinds;

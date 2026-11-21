@@ -71,7 +71,8 @@ async function filed() {
   };
   const run = (
     extra: { restored?: readonly VaultPath[]; itemRestored?: boolean; keepItemEdit?: boolean } = {},
-  ) => undoExactly({ vault: assistVault(vault.ports), undo, notePaths: notePaths(), mark, ...extra });
+  ) =>
+    undoExactly({ vault: assistVault(vault.ports), undo, notePaths: notePaths(), mark, ...extra });
   return {
     vault,
     undo,
