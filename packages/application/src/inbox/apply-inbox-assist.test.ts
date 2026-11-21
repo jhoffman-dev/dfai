@@ -1276,39 +1276,42 @@ describe('review #911 round 3: a rollback that keeps an edit takes out whom it m
 });
 
 describe('review #911 round 3: no write of a row escapes the one guarded path (A)', () => {
-  it('in every apply, every rollback after a failure at every position, and every undo', async () => {
-    let checked = 0;
-    for (const row of ROW_KINDS) {
-      // A clean apply and its undo, and how many writes the apply makes.
-      const clean = setUp(LINKED);
-      const previewed = await clean.preview();
-      const calls = watched(clean);
-      const applied = appliedOf(await clean.apply(row, previewed));
-      expect(await clean.undo(applied)).toMatchObject({ kind: 'undone' });
-      expect(escapes(calls).join(' | '), row).toBe('');
-      const writes = calls.filter(
-        ({ method, args }) =>
-          WRITES.includes(method) && !ofTheLog(String(args['path'] ?? args['from'])),
-      );
-      checked += writes.length;
-      // Each write of the apply failing in turn: the rollback's writes too go through the guard.
-      // Past the apply's own writes, the apply simply succeeds: harmless, and counted too.
-      for (let nth = 1; nth <= writes.length; nth += 1) {
-        const v = setUp(LINKED);
-        const again = await v.preview();
-        const seen = watched(v);
-        failingWrite(v, nth);
-        const outcome = await v.apply(row, again);
-        if (outcome.kind === 'failed' && outcome.undo !== undefined) {
-          await undoAssistRow(v.ports, { undo: outcome.undo, notePaths: v.notePaths() });
+  it.each(ROW_KINDS)(
+    '%s: in its apply, its rollback after a failure at every position, and its undo',
+    async (row) => {
+      let checked = 0;
+      {
+        // A clean apply and its undo, and how many writes the apply makes.
+        const clean = setUp(LINKED);
+        const previewed = await clean.preview();
+        const calls = watched(clean);
+        const applied = appliedOf(await clean.apply(row, previewed));
+        expect(await clean.undo(applied)).toMatchObject({ kind: 'undone' });
+        expect(escapes(calls).join(' | '), row).toBe('');
+        const writes = calls.filter(
+          ({ method, args }) =>
+            WRITES.includes(method) && !ofTheLog(String(args['path'] ?? args['from'])),
+        );
+        checked += writes.length;
+        // Each write of the apply failing in turn: the rollback's writes too go through the guard.
+        // Past the apply's own writes, the apply simply succeeds: harmless, and counted too.
+        for (let nth = 1; nth <= writes.length; nth += 1) {
+          const v = setUp(LINKED);
+          const again = await v.preview();
+          const seen = watched(v);
+          failingWrite(v, nth);
+          const outcome = await v.apply(row, again);
+          if (outcome.kind === 'failed' && outcome.undo !== undefined) {
+            await undoAssistRow(v.ports, { undo: outcome.undo, notePaths: v.notePaths() });
+          }
+          expect(escapes(seen), `${row}, write ${nth} failing`).toEqual([]);
+          checked += seen.filter(({ method }) => WRITES.includes(method)).length;
         }
-        expect(escapes(seen), `${row}, write ${nth} failing`).toEqual([]);
-        checked += seen.filter(({ method }) => WRITES.includes(method)).length;
       }
-    }
-    // The test is about something: it looked at many writes.
-    expect(checked).toBeGreaterThan(100);
-  }, 30_000);
+      // The test is about something: it looked at every write of the row, and of each rollback.
+      expect(checked).toBeGreaterThan(10);
+    },
+  );
 
   it('would catch a write made around the guard', async () => {
     const v = setUp(LINKED);
@@ -1328,82 +1331,88 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
   });
 });
 
-describe('review #911 round 3: a person’s edit, at any moment of a row, is never lost (11)', () => {
-  it('apply and undo, an edit landing at every host call, on the item or a note linking it: exact bytes', async () => {
-    let cases = 0;
-    for (const row of ROW_KINDS) {
-      // What a clean apply of the row leaves each note saying: an applied row whose undo was refused stays so.
-      const clean = setUp(LINKED);
-      appliedOf(await clean.apply(row, await clean.preview()));
-      const appliedState = clean.snapshot();
-      for (const target of ['item', 'Notes/Week.md'] as const) {
-        for (const phase of ['apply', 'undo'] as const) {
-          for (let k = 1; ; k += 1) {
-            const v = setUp(LINKED);
-            const before = v.snapshot();
-            const previewed = await v.preview();
-            let applied: AssistApplied | null = null;
-            if (phase === 'undo') applied = await v.apply(row, previewed);
-            if (phase === 'undo' && applied?.kind !== 'applied')
-              throw new Error(`${row} did not apply`);
-            // Where the item is, as the row moves it; and the edit, made once, after host call k.
-            let itemAt: string =
-              phase === 'undo' && applied?.kind === 'applied' ? applied.path : row;
-            let calls = 0;
-            let edited: { path: string; text: string } | null = null;
-            const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
-            for (const method of EVERY_METHOD) {
-              const inner = fs[method]!;
-              fs[method] = async (args: unknown) => {
-                const answer = await inner(args);
-                const named =
-                  typeof args === 'string' ? { path: args } : (args as Record<string, unknown>);
-                if (method === 'moveEntry' && named['from'] === itemAt)
-                  itemAt = String(named['to']);
-                if (
-                  ofTheLog(
-                    String(named['path'] ?? named['from'] ?? (Array.isArray(args) ? args[0] : '')),
-                  )
-                )
-                  return answer;
-                calls += 1;
-                if (calls === k && edited === null) {
-                  const path = target === 'item' ? itemAt : target;
-                  const text = `${v.files.get(path)!}Mine.\n`;
-                  v.files.set(path, text);
-                  edited = { path, text };
-                }
-                return answer;
-              };
-            }
-            if (phase === 'apply') {
-              applied = await v.apply(row, previewed);
-              if (applied.kind === 'applied') await v.undo(applied).catch(() => undefined);
-            } else if (applied?.kind === 'applied') {
-              await v.undo(applied);
-            }
-            if (edited === null) break;
-            cases += 1;
-            const { path, text } = edited;
-            const where = `${row}, ${target}, ${phase}, after call ${k}`;
-            // The person's edit is exactly as they left it: never written over, never undone away.
-            expect(
-              v.files.get(path) ?? [...v.files.values()].find((each) => each === text),
-              where,
-            ).toBe(text);
-            // Every note no one edited is exactly as it was before the row, or exactly as a clean apply leaves it.
-            for (const [note, bytes] of notesBut(v.files)) {
-              if (note === path || bytes === text || !before.has(note)) continue;
-              const fine = before.get(note) === bytes || appliedState.get(note) === bytes;
-              expect(fine, `${where}: ${note}`).toBe(true);
-            }
-          }
-        }
-      }
+/**
+ * Applies or undoes `row` once for each host call it makes, a person's edit
+ * landing on the item or a note linking it just after that call, and checks
+ * the bytes; resolves to how many calls it tried.
+ */
+async function sweepEdits(
+  row: (typeof ROW_KINDS)[number],
+  target: 'item' | 'Notes/Week.md',
+  phase: 'apply' | 'undo',
+): Promise<number> {
+  // What a clean apply of the row leaves each note saying: an applied row whose undo was refused stays so.
+  const clean = setUp(LINKED);
+  appliedOf(await clean.apply(row, await clean.preview()));
+  const appliedState = clean.snapshot();
+  for (let k = 1; ; k += 1) {
+    const v = setUp(LINKED);
+    const before = v.snapshot();
+    const previewed = await v.preview();
+    const applied = phase === 'undo' ? appliedOf(await v.apply(row, previewed)) : null;
+    const edited = editAfterCall(v, { k, target, itemAt: applied?.path ?? row });
+    if (phase === 'apply') {
+      const outcome = await v.apply(row, previewed);
+      if (outcome.kind === 'applied') await v.undo(outcome).catch(() => undefined);
+    } else {
+      await v.undo(applied!);
     }
-    expect(cases).toBeGreaterThan(250);
-    // Some 260 applies and undoes: seconds plain, longer under coverage instrumentation.
-  }, 60_000);
+    if (edited.made === null) return k - 1;
+    const { path, text } = edited.made;
+    const where = `${row}, ${target}, ${phase}, after call ${k}`;
+    // The person's edit is exactly as they left it: never written over, never undone away.
+    expect(v.files.get(path) ?? [...v.files.values()].find((each) => each === text), where).toBe(
+      text,
+    );
+    // Every note no one edited is exactly as it was before the row, or exactly as a clean apply leaves it.
+    for (const [note, bytes] of notesBut(v.files)) {
+      if (note === path || bytes === text || !before.has(note)) continue;
+      const fine = before.get(note) === bytes || appliedState.get(note) === bytes;
+      expect(fine, `${where}: ${note}`).toBe(true);
+    }
+  }
+}
+
+/** Makes the person's edit once, just after the `k`th host call to a note, following the item as it moves. */
+function editAfterCall(
+  v: ReturnType<typeof setUp>,
+  { k, target, itemAt: start }: { k: number; target: 'item' | 'Notes/Week.md'; itemAt: string },
+) {
+  let itemAt = start;
+  let calls = 0;
+  const edited: { made: { path: string; text: string } | null } = { made: null };
+  const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+  for (const method of EVERY_METHOD) {
+    const inner = fs[method]!;
+    fs[method] = async (args: unknown) => {
+      const answer = await inner(args);
+      const named = typeof args === 'string' ? { path: args } : (args as Record<string, unknown>);
+      if (method === 'moveEntry' && named['from'] === itemAt) itemAt = String(named['to']);
+      const path = String(named['path'] ?? named['from'] ?? (Array.isArray(args) ? args[0] : ''));
+      if (ofTheLog(path)) return answer;
+      calls += 1;
+      if (calls === k && edited.made === null) {
+        const at = target === 'item' ? itemAt : target;
+        const text = `${v.files.get(at)!}Mine.\n`;
+        v.files.set(at, text);
+        edited.made = { path: at, text };
+      }
+      return answer;
+    };
+  }
+  return edited;
+}
+
+describe('review #911 round 3: a person’s edit, at any moment of a row, is never lost (11)', () => {
+  const cases = ROW_KINDS.flatMap((row) =>
+    (['item', 'Notes/Week.md'] as const).flatMap((target) =>
+      (['apply', 'undo'] as const).map((phase) => [row, target, phase] as const),
+    ),
+  );
+  it.each(cases)('%s, an edit on %s, during %s: exact bytes', async (row, target, phase) => {
+    // About something: the row makes several host calls, and each was tried.
+    expect(await sweepEdits(row, target, phase)).toBeGreaterThan(3);
+  });
 });
 
 describe('apply then undo, as a seeded property', () => {
@@ -1434,49 +1443,51 @@ describe('apply then undo, as a seeded property', () => {
     return notes;
   }
 
-  it('restores every byte of every note, and every path, whatever rows are applied and in whatever order', async () => {
-    let editsMade = 0;
-    for (let seed = 1; seed <= 24; seed += 1) {
-      const random = seededRandom(seed);
-      const v = setUp({ ...VAULT, ...thirdNotes(random) });
-      const before = v.snapshot();
-      const previewed = await v.preview();
-      // Every other seed, someone edits each note the row moves, as it lands (#911).
-      const edits = seed % 2 === 0 ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
-      const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
-      const results = await applySureRows(v.ports, {
-        appliable: EVERY_ASSIST_KIND,
-        rows,
-        notePaths: v.notePaths(),
-      });
-      expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
-      for (const path of v.files.keys())
-        expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
-      const undos = results.flatMap(({ path, applied }) =>
-        applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
-      );
-      const undone = await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
-      expect(
-        undone.map(({ undone: each }) => each.kind),
-        `seed ${seed}`,
-      ).not.toContain('refused');
-      expect([...notesBut(v.files).keys()].sort(), `seed ${seed}`).toEqual(
-        [...notesBut(before).keys()].sort(),
-      );
-      // Every edit is still there; every note no one edited is byte for byte as it was.
-      const kept = [...notesBut(v.files)].filter(([, text]) => text.endsWith('Mine.\n'));
-      expect(kept.length, `seed ${seed}`).toBe(edits.count);
-      editsMade += edits.count;
-      for (const [path] of kept) expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
-      const untouched = new Map(
-        [...notesBut(v.files)].filter(([, text]) => !text.endsWith('Mine.\n')),
-      );
-      const touched = new Set(kept.map(([path]) => path));
-      expect(untouched, `seed ${seed}`).toEqual(
-        new Map([...notesBut(before)].filter(([path]) => !touched.has(path))),
-      );
-    }
-    // The property is about something: edits did land as notes moved.
-    expect(editsMade).toBeGreaterThan(5);
-  });
+  const SEEDS = Array.from({ length: 24 }, (_, at) => at + 1);
+  it.each(SEEDS)(
+    'seed %i: every byte of every note, and every path, back whatever rows are applied and in whatever order',
+    async (seed) => {
+      {
+        const random = seededRandom(seed);
+        const v = setUp({ ...VAULT, ...thirdNotes(random) });
+        const before = v.snapshot();
+        const previewed = await v.preview();
+        // Every other seed, someone edits each note the row moves, as it lands (#911).
+        const edits = seed % 2 === 0 ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
+        const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
+        const results = await applySureRows(v.ports, {
+          appliable: EVERY_ASSIST_KIND,
+          rows,
+          notePaths: v.notePaths(),
+        });
+        expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
+        for (const path of v.files.keys())
+          expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
+        const undos = results.flatMap(({ path, applied }) =>
+          applied.kind === 'applied' ? [{ path: createVaultPath(path), undo: applied.undo }] : [],
+        );
+        const undone = await undoAssistRows(v.ports, { undos, notePaths: v.notePaths() });
+        expect(
+          undone.map(({ undone: each }) => each.kind),
+          `seed ${seed}`,
+        ).not.toContain('refused');
+        expect([...notesBut(v.files).keys()].sort(), `seed ${seed}`).toEqual(
+          [...notesBut(before).keys()].sort(),
+        );
+        // Every edit is still there; every note no one edited is byte for byte as it was.
+        const kept = [...notesBut(v.files)].filter(([, text]) => text.endsWith('Mine.\n'));
+        expect(kept.length, `seed ${seed}`).toBe(edits.count);
+        // About something: on an even seed, edits did land as notes moved.
+        if (seed % 2 === 0) expect(edits.count, `seed ${seed}`).toBeGreaterThan(0);
+        for (const [path] of kept) expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
+        const untouched = new Map(
+          [...notesBut(v.files)].filter(([, text]) => !text.endsWith('Mine.\n')),
+        );
+        const touched = new Set(kept.map(([path]) => path));
+        expect(untouched, `seed ${seed}`).toEqual(
+          new Map([...notesBut(before)].filter(([path]) => !touched.has(path))),
+        );
+      }
+    },
+  );
 });
