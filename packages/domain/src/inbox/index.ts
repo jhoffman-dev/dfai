@@ -85,15 +85,24 @@ export { assistItemFacts } from './assist-item-facts.ts';
 export type { AssistAsked } from './assist-item-facts.ts';
 export { assistOwnWords } from './assist-own-words.ts';
 export {
+  APPLIABLE_ASSIST_KINDS,
   assistAppliedWords,
+  assistApplyKinds,
   assistApplyStep,
   assistCautionWords,
   assistNotAppliable,
+  assistNotAppliedYet,
   assistRowIntegrity,
   assistStepKeys,
   assistStepPaths,
+  EVERY_ASSIST_KIND,
 } from './assist-apply.ts';
-export type { AssistApplyStep, AssistFill, AssistNewPerson } from './assist-apply.ts';
+export type {
+  AssistApplyKind,
+  AssistApplyStep,
+  AssistFill,
+  AssistNewPerson,
+} from './assist-apply.ts';
 export { assistRecheck } from './assist-recheck.ts';
 export type {
   AssistApplyAsk,

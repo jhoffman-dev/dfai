@@ -1,7 +1,9 @@
 import {
+  APPLIABLE_ASSIST_KINDS,
   archiveRefusal,
   assistAppliedWords,
   assistApplyStep,
+  assistNotAppliedYet,
   assistRowIntegrity,
   digestOf,
   DUPLICATE_OF_KEY,
@@ -11,6 +13,7 @@ import {
   vaultSpellingOf,
   wikiLinkTargetFor,
   type AssistApplyAsk,
+  type AssistApplyKind,
   type AssistApplyStep,
   type AssistEvidence,
   type AssistIntent,
@@ -76,12 +79,20 @@ export interface AssistApplyRequest {
   /** Undefined for a row Claude gave no answer for: never applied. */
   readonly evidence: AssistEvidence | undefined;
   readonly notePaths: readonly VaultPath[];
+  /** The kinds Apply writes: the domain's for now (#925) unless handed others, as tests of the moving kinds are. */
+  readonly appliable?: ReadonlySet<AssistApplyKind>;
 }
 
 /** An applied row, and the vault's notes after it: where the item went, and anyone made. */
 export interface AssistAppliedRow {
   readonly applied: AssistApplied;
   readonly notePaths: readonly VaultPath[];
+}
+
+/** Why a row is shown without Apply for now (#925); null for one that is applied. */
+function notAppliedYet(row: AssistRow, appliable: ReadonlySet<AssistApplyKind>): string | null {
+  const step = assistApplyStep(row);
+  return step === null ? null : assistNotAppliedYet(step, appliable);
 }
 
 const nothingChanged = (why: string): AssistApplied => ({
@@ -106,13 +117,15 @@ const nothingChanged = (why: string): AssistApplied => ({
  */
 export async function applyAssistRow(
   ports: ApplyAssistPorts,
-  { row, evidence, notePaths }: AssistApplyRequest,
+  { row, evidence, notePaths, appliable = APPLIABLE_ASSIST_KINDS }: AssistApplyRequest,
 ): Promise<AssistAppliedRow> {
   const unchanged = (applied: AssistApplied) => ({ applied, notePaths });
   const refusal = assistRowIntegrity(row, evidence);
   if (refusal !== null || evidence === undefined) {
     return unchanged(nothingChanged(refusal ?? 'Nothing of it was kept at the preview.'));
   }
+  const notYet = notAppliedYet(row, appliable);
+  if (notYet !== null) return unchanged(nothingChanged(notYet));
   // As the vault spells it, or not at all (#911): on a disk that ignores case,
   // `inbox/x.md` would open `Inbox/x.md` and be logged under a name the vault does not have.
   const spelled = vaultSpellingOf(row.path, notePaths);
@@ -632,9 +645,12 @@ export async function applySureRows(
     notePaths,
     signal,
     onEach,
+    appliable = APPLIABLE_ASSIST_KINDS,
   }: {
     rows: readonly { row: AssistRow; evidence: AssistEvidence | undefined }[];
     notePaths: readonly VaultPath[];
+    /** As for one row: the domain's kinds unless handed others. */
+    appliable?: ReadonlySet<AssistApplyKind>;
     signal?: AbortSignal;
     /** Told as each row lands, so the page can show it. */
     onEach?: (each: AssistAppliedEach) => void;
@@ -643,9 +659,10 @@ export async function applySureRows(
   const results: AssistAppliedEach[] = [];
   let paths = notePaths;
   for (const { row, evidence } of rows) {
-    if (assistApplyStep(row) === null || evidence === undefined) continue;
+    const applies = assistApplyStep(row) !== null && notAppliedYet(row, appliable) === null;
+    if (!applies || evidence === undefined) continue;
     if (signal?.aborted === true) break;
-    const done = await applyAssistRow(ports, { row, evidence, notePaths: paths });
+    const done = await applyAssistRow(ports, { row, evidence, notePaths: paths, appliable });
     paths = done.notePaths;
     const each = { path: row.path, applied: done.applied };
     results.push(each);

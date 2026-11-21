@@ -68,6 +68,59 @@ export function assistNotAppliable(row: AssistRow): string | null {
   return null;
 }
 
+/** One thing applying a row does: written where the item is, or a move. */
+export type AssistApplyKind = 'task' | 'due' | 'file' | 'link-person' | 'add-person' | 'duplicate';
+
+/** Every kind: what tests of the moving kinds, and #925 once it lands, hand Apply. */
+export const EVERY_ASSIST_KIND: ReadonlySet<AssistApplyKind> = new Set([
+  'task',
+  'due',
+  'file',
+  'link-person',
+  'add-person',
+  'duplicate',
+]);
+
+/**
+ * The kinds Apply writes now (#911): only what is written where the item is,
+ * each held end to end by the host's own check of the text. Filing under a
+ * project and archiving a duplicate move the note, and the host's move has no
+ * such check yet: they are shown, not applied, until #925 adds it and turns
+ * them on here.
+ */
+export const APPLIABLE_ASSIST_KINDS: ReadonlySet<AssistApplyKind> = new Set([
+  'task',
+  'due',
+  'link-person',
+  'add-person',
+]);
+
+/** What applying `step` does, a kind each, in the order it does them. */
+export function assistApplyKinds(step: AssistApplyStep): AssistApplyKind[] {
+  if (step.duplicateOf !== null) return ['duplicate'];
+  const kinds: AssistApplyKind[] = [];
+  if (step.fill?.makeTask === true) kinds.push('task');
+  if (step.fill?.due != null) kinds.push('due');
+  if (step.fill?.project != null) kinds.push('file');
+  if (step.links.length > 0) kinds.push('link-person');
+  if (step.adds.length > 0) kinds.push('add-person');
+  return kinds;
+}
+
+const NOT_YET: Partial<Record<AssistApplyKind, string>> = {
+  file: 'Filing is not applied automatically yet.',
+  duplicate: 'Archiving a duplicate is not applied automatically yet.',
+};
+
+/** Why a row Apply could write is shown without Apply for now; null when it is applied. */
+export function assistNotAppliedYet(
+  step: AssistApplyStep,
+  appliable: ReadonlySet<AssistApplyKind> = APPLIABLE_ASSIST_KINDS,
+): string | null {
+  const held = assistApplyKinds(step).find((kind) => !appliable.has(kind));
+  return held === undefined ? null : (NOT_YET[held] ?? 'It is not applied automatically yet.');
+}
+
 /** The changes a planned row comes to; null for a row that is not applied. */
 export function assistApplyStep(row: AssistRow): AssistApplyStep | null {
   if (assistNotAppliable(row) !== null) return null;

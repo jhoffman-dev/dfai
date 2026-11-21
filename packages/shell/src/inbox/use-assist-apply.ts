@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   assistApplyStep,
+  assistNotAppliedYet,
   messageWithoutPaths,
   type AssistEvidence,
   type AssistRow,
@@ -58,9 +59,21 @@ const NO_ACTIVITY: Pick<ActivityLog, 'inOpenVault'> = {
 };
 const NOTHING_YET: Applying = { rows: new Map(), order: [], said: '' };
 
-/** Whether a row can be applied at all: the domain says so, and the preview kept what it saw of it. */
+/** A row with nothing to press: shown with why, when it is one that waits (#925). */
+const previewOnly = (row: AssistRow): AssistRowAction => {
+  const why = notYet(row);
+  return why === null ? { kind: 'none' } : { kind: 'preview', words: why };
+};
+
+/** Why a row Apply could write is shown without Apply for now (#925): the domain's kinds. Null when applied. */
+const notYet = (row: AssistRow): string | null => {
+  const step = assistApplyStep(row);
+  return step === null ? null : assistNotAppliedYet(step);
+};
+
+/** Whether a row can be applied: the domain says so, and the preview kept what it saw of it. */
 const appliable = (row: AssistRow, evidence: ReadonlyMap<string, AssistEvidence>) =>
-  assistApplyStep(row) !== null && evidence.has(row.path);
+  assistApplyStep(row) !== null && notYet(row) === null && evidence.has(row.path);
 
 /**
  * Apply and Undo on Inbox assist's rows (#909): per row and for all, each
@@ -107,7 +120,7 @@ export function useAssistApply({
   );
   const actionOf = useCallback(
     (row: AssistRow): AssistRowAction =>
-      appliable(row, evidence) ? shownAction(state.rows.get(row.path) ?? IDLE) : { kind: 'none' },
+      appliable(row, evidence) ? shownAction(state.rows.get(row.path) ?? IDLE) : previewOnly(row),
     [evidence, state],
   );
   const busy = [...state.rows.values()].some(
@@ -202,7 +215,9 @@ function useActions({
         if (now === null) return;
         const idle = now.planned.rows.filter(
           (row) =>
-            (now.state.rows.get(row.path) ?? IDLE).kind === 'idle' && assistApplyStep(row) !== null,
+            (now.state.rows.get(row.path) ?? IDLE).kind === 'idle' &&
+            assistApplyStep(row) !== null &&
+            notYet(row) === null,
         );
         const claimedRows = claim(idle.map((row) => row.path));
         const rows = idle.filter((row) => claimedRows.free.includes(row.path));

@@ -5,6 +5,8 @@ import { focusIsHome } from '../row-keys.ts';
 export type AssistRowAction =
   /** A question, or an item left: nothing to press. */
   | { readonly kind: 'none' }
+  /** Shown, not applied for now (#925): it would move the note. Why, and nothing to press. */
+  | { readonly kind: 'preview'; readonly words: string }
   /** Offered: Apply. A row that asked, or failed, says why beside it. */
   | { readonly kind: 'apply'; readonly said: string | null }
   /** Being applied, or undone. */
@@ -89,6 +91,12 @@ export function AssistRow({
       {actions !== null && typeof row.caution === 'string' && row.action?.kind === 'apply' && (
         <small className="inbox-assist__caution">{row.caution}</small>
       )}
+      {/* Shown whether or not anything else can be applied: why this one waits. */}
+      {row.action?.kind === 'preview' && (
+        <span className="inbox-assist__act">
+          <span className="inbox-assist__said">{row.action.words}</span>
+        </span>
+      )}
       {actions !== null && <RowAction row={row} actions={actions} />}
     </li>
   );
@@ -99,6 +107,7 @@ function RowAction({ row, actions }: { row: AssistRowView; actions: AssistRowAct
   const { button, words } = useFollowingFocus(action.kind);
   switch (action.kind) {
     case 'none':
+    case 'preview':
       return null;
     case 'apply':
       return (
