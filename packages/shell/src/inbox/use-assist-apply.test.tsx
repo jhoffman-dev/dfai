@@ -27,12 +27,15 @@ const json = (frontmatter: Record<string, unknown>, body = '') =>
 const CALL = 'Inbox/Call Mara.md';
 const LUNCH = 'Inbox/Lunch with Tobias.md';
 const JUNK = 'Inbox/Buy now.md';
+/** A task that would be filed under its project: shown, not applied, for now (#925). */
+const RENEW = 'Inbox/Renew payroll.md';
 const NOTES: Record<string, string> = {
   'Projects/Larkspur Payroll.md': json({ type: 'project', para: 'project' }),
   'People/Mara Quill.md': json({ type: 'person', email: 'mara.quill@example.com' }),
   [CALL]: 'Call Mara Quill <mara.quill@example.com> about the renewal.\n',
   [LUNCH]: 'Lunch with Tobias Fenn <tobias@example.org>.\n',
   [JUNK]: 'Buy now!\n',
+  [RENEW]: 'Renew the payroll contract.\n',
 };
 const entry = (item: string, extra: Record<string, unknown> = {}) => ({
   item,
@@ -49,11 +52,11 @@ const entry = (item: string, extra: Record<string, unknown> = {}) => ({
 const ANSWER = JSON.stringify({
   items: [
     entry(CALL, {
-      projects: ['Projects/Larkspur Payroll.md'],
       people: [{ name: 'Mara Quill', email: null, person: 'People/Mara Quill.md' }],
     }),
     entry(LUNCH, { people: [{ name: 'Tobias Fenn', email: 'tobias@example.org', person: null }] }),
     entry(JUNK, { kind: 'junk' }),
+    entry(RENEW, { projects: ['Projects/Larkspur Payroll.md'] }),
   ],
 });
 const item = (path: string): InboxItem =>
@@ -110,7 +113,7 @@ function setUp() {
       wiring,
       ports,
       clock: CLOCK,
-      items: [CALL, LUNCH, JUNK].map(item),
+      items: [CALL, LUNCH, JUNK, RENEW].map(item),
       vaultKey: '/vault',
       apply: { write, activity },
     }),
@@ -147,6 +150,10 @@ describe('useInboxAssist: Apply and Undo', () => {
     await t.suggest();
     expect(t.rowOf('Call Mara').action).toEqual({ kind: 'apply', said: null });
     expect(t.rowOf('Buy now').action).toEqual({ kind: 'none' });
+    expect(t.rowOf('Renew payroll').action).toEqual({
+      kind: 'preview',
+      words: 'Filing is not applied automatically yet.',
+    });
     expect(t.plan()).toMatchObject({ canApplyAll: true, canUndoAll: false, busy: false });
   });
 
@@ -156,12 +163,11 @@ describe('useInboxAssist: Apply and Undo', () => {
     act(() => t.actions().onApply(CALL));
     await waitFor(() => expect(t.rowOf('Call Mara').action?.kind).toBe('applied'));
     expect(t.rowOf('Call Mara').action).toMatchObject({
-      words: 'Made it a task under Larkspur Payroll. Linked Mara Quill.',
+      words: 'Made it a task. Linked Mara Quill.',
     });
-    expect(t.plan().said).toBe(
-      'Call Mara: Made it a task under Larkspur Payroll. Linked Mara Quill.',
-    );
-    expect(t.vault.files.has(CALL)).toBe(false);
+    expect(t.plan().said).toBe('Call Mara: Made it a task. Linked Mara Quill.');
+    // Made a task where it is: an Inbox task is not filed by Apply yet.
+    expect(t.vault.files.get(CALL)).not.toBe(NOTES[CALL]);
     expect(t.plan().canUndoAll).toBe(true);
 
     act(() => t.actions().onUndo(CALL));
@@ -181,6 +187,9 @@ describe('useInboxAssist: Apply and Undo', () => {
     expect(t.rowOf('Call Mara').action?.kind).toBe('applied');
     expect(t.rowOf('Lunch with Tobias').action?.kind).toBe('applied');
     expect(t.rowOf('Buy now').action).toEqual({ kind: 'none' });
+    // The row that would be filed is skipped: shown, never written.
+    expect(t.rowOf('Renew payroll').action?.kind).toBe('preview');
+    expect(t.vault.files.get(RENEW)).toBe(NOTES[RENEW]);
     expect(t.vault.files.has('People/Tobias Fenn.md')).toBe(true);
     expect(t.plan().canApplyAll).toBe(false);
 

@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { createVaultPath } from '../vault/vault-path.ts';
 import {
   assistAppliedWords,
+  APPLIABLE_ASSIST_KINDS,
+  assistApplyKinds,
   assistApplyStep,
   assistNotAppliable,
+  assistNotAppliedYet,
+  EVERY_ASSIST_KIND,
   assistStepKeys,
   assistStepPaths,
 } from './assist-apply.ts';
@@ -129,5 +133,51 @@ describe('assistAppliedWords', () => {
     expect(
       assistAppliedWords(assistApplyStep(row({ kind: 'duplicate', of: KEPT, newerHolds: [] }))!),
     ).toBe('Archived as a duplicate of Call Mara.');
+  });
+});
+
+describe('which kinds Apply writes now (#911 round 4, #925)', () => {
+  const kinds = (each: AssistRow) => assistApplyKinds(assistApplyStep(each)!);
+
+  it('names what each row does: in place, or a move', () => {
+    expect(kinds(task())).toEqual(['task', 'due', 'file', 'link-person', 'add-person']);
+    expect(kinds(task({ project: null, due: null }))).toEqual([
+      'task',
+      'link-person',
+      'add-person',
+    ]);
+    expect(kinds(row({ kind: 'file', project: LARKSPUR }))).toEqual(['file']);
+    expect(kinds(row({ kind: 'duplicate', of: KEPT, newerHolds: [] }))).toEqual(['duplicate']);
+  });
+
+  it('applies the in-place kinds, and shows a row that moves the note without Apply, saying why', () => {
+    expect([...APPLIABLE_ASSIST_KINDS].sort()).toEqual([
+      'add-person',
+      'due',
+      'link-person',
+      'task',
+    ]);
+    // An Inbox task that stays where it is.
+    expect(assistNotAppliedYet(assistApplyStep(task({ project: null }))!)).toBeNull();
+    // One that would be filed under its project, a note filed, a duplicate archived: preview only.
+    expect(assistNotAppliedYet(assistApplyStep(task())!)).toBe(
+      'Filing is not applied automatically yet.',
+    );
+    expect(assistNotAppliedYet(assistApplyStep(row({ kind: 'file', project: LARKSPUR }))!)).toBe(
+      'Filing is not applied automatically yet.',
+    );
+    expect(
+      assistNotAppliedYet(assistApplyStep(row({ kind: 'duplicate', of: KEPT, newerHolds: [] }))!),
+    ).toBe('Archiving a duplicate is not applied automatically yet.');
+  });
+
+  it('applies every kind when handed them all', () => {
+    for (const each of [
+      task(),
+      row({ kind: 'file', project: LARKSPUR }),
+      row({ kind: 'duplicate', of: KEPT, newerHolds: [] }),
+    ]) {
+      expect(assistNotAppliedYet(assistApplyStep(each)!, EVERY_ASSIST_KIND)).toBeNull();
+    }
   });
 });

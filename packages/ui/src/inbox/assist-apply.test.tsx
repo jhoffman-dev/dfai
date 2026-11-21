@@ -254,3 +254,18 @@ describe('Apply on the suggestions', () => {
     expect(onPutAside).toHaveBeenCalledWith(row);
   });
 });
+
+describe('a row that would move the note, shown without Apply (#925)', () => {
+  it('says why, offers nothing to press, and is said with no other row appliable', () => {
+    const view = plan(
+      [row('Call Mara', { kind: 'preview', words: 'Filing is not applied automatically yet.' })],
+      {
+        canApplyAll: false,
+      },
+    );
+    render(<AssistSummary view={view} onDismiss={() => undefined} actions={null} />);
+    const shown = screen.getByRole('listitem', { name: 'Call Mara' });
+    expect(within(shown).getByText('Filing is not applied automatically yet.')).toBeTruthy();
+    expect(within(shown).queryByRole('button')).toBeNull();
+  });
+});

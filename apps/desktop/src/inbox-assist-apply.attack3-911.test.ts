@@ -33,7 +33,7 @@ import {
   type AssistApplied,
 } from '@dfai/application';
 import { automationVault } from '@dfai/application/testing/sqlite';
-import { createVaultPath, inboxItem } from '@dfai/domain';
+import { createVaultPath, EVERY_ASSIST_KIND, inboxItem } from '@dfai/domain';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
@@ -290,7 +290,14 @@ async function vaultWith(
   const apply = async (path: string) => {
     const row = outcome.rows.find((each) => each.path === path)!;
     const evidence = outcome.evidence.find((each) => each.item.path === path);
-    return (await applyAssistRow(ports, { row, evidence, notePaths: notePaths() })).applied;
+    return (
+      await applyAssistRow(ports, {
+        appliable: EVERY_ASSIST_KIND,
+        row,
+        evidence,
+        notePaths: notePaths(),
+      })
+    ).applied;
   };
   const undo = (applied: AssistApplied) => {
     if (applied.kind !== 'applied') throw new Error(`not applied: ${applied.words}`);

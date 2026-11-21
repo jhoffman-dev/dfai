@@ -17,6 +17,7 @@ import {
   type AssistRow,
   type InboxItem,
   type VaultPath,
+  EVERY_ASSIST_KIND,
 } from '@dfai/domain';
 import { automationVault } from '../testing/automation-vault.ts';
 import { recordingActivity } from '../testing/fake-activity.ts';
@@ -159,7 +160,14 @@ function setUp(notes: Record<string, string> = VAULT) {
   };
   const apply = async (path: string, previewed?: Awaited<ReturnType<typeof preview>>) => {
     const { row, evidence } = (previewed ?? (await preview())).of(path);
-    return (await applyAssistRow(ports, { row, evidence, notePaths: notePaths() })).applied;
+    return (
+      await applyAssistRow(ports, {
+        appliable: EVERY_ASSIST_KIND,
+        row,
+        evidence,
+        notePaths: notePaths(),
+      })
+    ).applied;
   };
   const snapshot = () => new Map(vault.files);
   return {
@@ -462,6 +470,48 @@ describe('applyAssistRow: what it says when the vault does not answer', () => {
   });
 });
 
+describe('review #911 round 4: the rows that move a note are shown, not applied, for now (#925)', () => {
+  it('applies an Inbox task where it is, and refuses filing and a duplicate, writing nothing', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const before = v.snapshot();
+    for (const [path, why] of [
+      [CALL, 'Filing is not applied automatically yet.'],
+      [ARTICLE, 'Filing is not applied automatically yet.'],
+      [RENEW, 'Archiving a duplicate is not applied automatically yet.'],
+    ] as const) {
+      const { row, evidence } = previewed.of(path);
+      const { applied } = await applyAssistRow(v.ports, {
+        row,
+        evidence,
+        notePaths: v.notePaths(),
+      });
+      expect(applied, path).toEqual({
+        kind: 'failed',
+        words: `Not applied: ${why} Nothing changed.`,
+      });
+    }
+    expect(v.snapshot()).toEqual(before);
+    const { row, evidence } = previewed.of(LUNCH);
+    expect(
+      (await applyAssistRow(v.ports, { row, evidence, notePaths: v.notePaths() })).applied,
+    ).toMatchObject({
+      kind: 'applied',
+      path: LUNCH,
+    });
+  });
+
+  it('Apply all sure ones skips the rows that move a note', async () => {
+    const v = setUp();
+    const previewed = await v.preview();
+    const results = await applySureRows(v.ports, {
+      rows: previewed.rows,
+      notePaths: v.notePaths(),
+    });
+    expect(results.map(({ path, applied }) => [path, applied.kind])).toEqual([[LUNCH, 'applied']]);
+  });
+});
+
 describe('applySureRows', () => {
   it('applies each sure row on its own, skips questions, and goes on past one that asks', async () => {
     const v = setUp();
@@ -469,6 +519,7 @@ describe('applySureRows', () => {
     v.files.set(ARTICLE, `${VAULT[ARTICLE]!}Edited.\r\n`);
     const seen: string[] = [];
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows,
       notePaths: v.notePaths(),
       onEach: ({ path }) => void seen.push(path),
@@ -488,6 +539,7 @@ describe('applySureRows', () => {
     const previewed = await v.preview();
     const controller = new AbortController();
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows,
       notePaths: v.notePaths(),
       signal: controller.signal,
@@ -502,6 +554,7 @@ describe('applySureRows', () => {
     const previewed = await v.preview();
     v.fail({ method: 'moveEntry', nth: 1 });
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows,
       notePaths: v.notePaths(),
     });
@@ -558,6 +611,7 @@ describe('undo', () => {
     const before = v.snapshot();
     const previewed = await v.preview();
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows,
       notePaths: v.notePaths(),
     });
@@ -611,6 +665,7 @@ describe('undo: the edges', () => {
     const v = setUp();
     const previewed = await v.preview();
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows,
       notePaths: v.notePaths(),
     });
@@ -648,12 +703,14 @@ describe('the preview, for Apply', () => {
     const v = setUp();
     const previewed = await v.preview();
     const results = await applySureRows(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       rows: previewed.rows.map(({ row }) => ({ row, evidence: undefined })),
       notePaths: v.notePaths(),
     });
     expect(results).toEqual([]);
     expect(
       await applyAssistRow(v.ports, {
+        appliable: EVERY_ASSIST_KIND,
         ...previewed.of(CALL),
         evidence: undefined,
         notePaths: v.notePaths(),
@@ -728,7 +785,11 @@ describe('review #911: a row that does not belong with its evidence is refused b
       return read(at);
     };
     const before = v.snapshot();
-    const { applied } = await applyAssistRow(v.ports, { ...given, notePaths: v.notePaths() });
+    const { applied } = await applyAssistRow(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
+      ...given,
+      notePaths: v.notePaths(),
+    });
     expect(applied).toMatchObject({
       kind: 'failed',
       words: expect.stringMatching(/^Not applied: .*Nothing changed\.$/u),
@@ -1096,6 +1157,7 @@ describe('review #911 round 2: a path as the vault spells it (item 7)', () => {
       return read(at);
     };
     const { applied } = await applyAssistRow(v.ports, {
+      appliable: EVERY_ASSIST_KIND,
       row: { ...row, path: bent },
       evidence: {
         ...evidence!,
@@ -1382,7 +1444,11 @@ describe('apply then undo, as a seeded property', () => {
       // Every other seed, someone edits each note the row moves, as it lands (#911).
       const edits = seed % 2 === 0 ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
       const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
-      const results = await applySureRows(v.ports, { rows, notePaths: v.notePaths() });
+      const results = await applySureRows(v.ports, {
+        appliable: EVERY_ASSIST_KIND,
+        rows,
+        notePaths: v.notePaths(),
+      });
       expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
       for (const path of v.files.keys())
         expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
