@@ -7,11 +7,12 @@ export const QUERY_STOPPED = 'interrupted';
 
 /**
  * What a person reads in its place (#919): what happened, that nothing is
- * lost, what to try, and that it is ours to fix. "interrupted" told them none
- * of that.
+ * lost, and that it is ours to fix. "interrupted" told them none of that. No
+ * advice: a filter makes a page cost more, not less, and fewer columns change
+ * only the page itself.
  */
 export const QUERY_STOPPED_WORDS =
-  'DFAI stopped this view because it was taking too long to read, but nothing in your notes is lost: try showing fewer columns or adding a filter, and please report it as a bug.';
+  'DFAI stopped this view because it was taking too long to read. Nothing in your notes is lost. Please report it as a bug.';
 
 /** A failure as words for a person: a stopped query said plainly, anything else as it was said. */
 export function failureWords(error: unknown): string {

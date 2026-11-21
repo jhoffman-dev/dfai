@@ -8,12 +8,10 @@ describe('failureWords (#919)', () => {
     expect(failureWords(new Error('interrupted'))).toBe(QUERY_STOPPED_WORDS);
   });
 
-  it('tells the person what happened, that nothing is lost, what to try, and to report it', () => {
-    expect(QUERY_STOPPED_WORDS).toMatch(/stopped this view/);
-    expect(QUERY_STOPPED_WORDS).toMatch(/nothing in your notes is lost/);
-    expect(QUERY_STOPPED_WORDS).toMatch(/fewer columns or adding a filter/);
-    expect(QUERY_STOPPED_WORDS).toMatch(/report it as a bug/);
-    expect(QUERY_STOPPED_WORDS).not.toMatch(/interrupted/);
+  it('tells the person what happened, that nothing is lost, and to report it', () => {
+    expect(QUERY_STOPPED_WORDS).toBe(
+      'DFAI stopped this view because it was taking too long to read. Nothing in your notes is lost. Please report it as a bug.',
+    );
   });
 
   it('leaves every other failure as it was said', () => {

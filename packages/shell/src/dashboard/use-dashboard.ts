@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { isDashboard, parseDashboard, type ObjectType, type Widget } from '@dfai/domain';
+import {
+  failureWords,
+  isDashboard,
+  parseDashboard,
+  type ObjectType,
+  type Widget,
+} from '@dfai/domain';
 import { runDashboard, type IndexPort, type OpenNote, type WidgetResult } from '@dfai/application';
 import { useNoteNames } from '@dfai/ui';
 
@@ -44,7 +50,7 @@ export function useDashboard({
     let cancelled = false;
     runDashboard({ index, widgets, types, notePaths, names })
       .then((found) => {
-        if (!cancelled) setResults(found);
+        if (!cancelled) setResults(found.map(inPlainWords));
       })
       .catch(() => {
         // runDashboard reports a failing widget as a result, so a rejection here
@@ -59,4 +65,13 @@ export function useDashboard({
   }, [index, widgets, types, notePaths, names, indexKey]);
 
   return { widgets: widgets ?? [], results: widgets === null ? null : (results ?? []) };
+}
+
+/**
+ * A widget's failure as the dashboard draws it: a query the index stopped at
+ * its budget in plain words (#919). The API keeps the index's own word.
+ */
+export function inPlainWords(result: WidgetResult): WidgetResult {
+  if (result.data.shape !== 'error') return result;
+  return { ...result, data: { ...result.data, message: failureWords(result.data.message) } };
 }

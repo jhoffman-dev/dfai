@@ -79,6 +79,10 @@ const STATEMENTS: Record<string, CompiledQuery> = {
     filters: [{ key: 'people', operator: 'contains', value: 'Mara' }],
     sorts: [{ key: 'start', direction: 'asc' }],
   }),
+  MEETING_SORT_BY_PEOPLE: compileViewQuery({
+    ...table,
+    sorts: [{ key: 'people', direction: 'desc' }],
+  }),
   MEETING_COUNT: compileViewQuery(table, { aggregate: { kind: 'count', column: null } }),
   MEETING_GROUPS: compileViewQuery(table, { groupBy: 'kind' }),
 };
@@ -97,6 +101,7 @@ describe('the SQL the type-table budget tests run is the SQL TypeScript writes (
     for (const name of [
       'MEETING_TABLE',
       'MEETING_TABLE_BY_DATE',
+      'MEETING_SORT_BY_PEOPLE',
       'MEETING_COUNT',
       'MEETING_GROUPS',
     ]) {

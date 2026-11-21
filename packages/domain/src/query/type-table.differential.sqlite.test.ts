@@ -251,8 +251,14 @@ function vaultNotes(seed: number): Note[] {
       frontmatter,
     });
   }
-  // A note with no frontmatter but a type, and one typed twice the same way.
+  // A note with nothing but a type, and one typed twice the same way.
   notes.push({ path: 'bare.md', title: 'Bare', modified: 1, frontmatter: { type: 'task' } });
+  notes.push({
+    path: 'twice.md',
+    title: 'Twice',
+    modified: 2,
+    frontmatter: { type: ['task', 'Task'], status: 'next' },
+  });
   return notes;
 }
 
