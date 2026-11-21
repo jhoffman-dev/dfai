@@ -17,6 +17,8 @@ import { foldedLinkName } from '../markdown/resolve-wikilink.ts';
 import { linkTargets } from '../index/relation-rows.ts';
 import { TAGS_KEY } from '../tags/note-tags.ts';
 import { isWikiLink } from '../types/property-value.ts';
+import type { TypeViewColumn } from '../query-language/type-view.ts';
+import { listColumnOf, listCondition } from './list-filter.ts';
 
 export { InvalidQueryError };
 
@@ -166,6 +168,13 @@ export interface QueryReach {
    * Without it a link is compared as the text it is.
    */
   readonly resolveLink?: ((target: string) => string | null) | undefined;
+  /**
+   * The columns the type's view is made of (`typeViewColumns`), so a filter
+   * on a list of text asks the index for the notes whose items match rather
+   * than joining every note's list to look (#923). Without them every filter
+   * compares the cell. They must be the ones the index made the view from.
+   */
+  readonly viewColumns?: readonly TypeViewColumn[] | undefined;
 }
 
 export function compileViewQuery(
@@ -321,6 +330,41 @@ function ordering(query: ViewQuery, shape: QueryShape): string[] {
 function condition(
   filter: QueryFilter,
   parameters: (string | number)[],
+  reach: QueryReach,
+): string {
+  return itemCondition(filter, parameters, reach) ?? cellCondition(filter, parameters, reach);
+}
+
+/**
+ * A filter on a list of text, as a lookup of the notes whose items match
+ * (`listCondition`); null to compare the cell instead — the list's cell
+ * when no lookup keeps the same notes, and a filter by a link by the note
+ * it opens, which is a lookup already.
+ */
+function itemCondition(
+  filter: QueryFilter,
+  parameters: (string | number)[],
+  { resolveLink, viewColumns }: QueryReach,
+): string | null {
+  const column = listColumnOf(filter.key, viewColumns);
+  if (column === null) return null;
+  const { operator, value } = filter;
+  if (WITHOUT_VALUE.includes(operator)) {
+    return listCondition({ operator, column, value: undefined }, parameters);
+  }
+  if (typeof value !== 'string' || relativeDateSql(value) !== null) return null;
+  if (comparesExactly(filter) && resolveLink !== undefined && isWikiLink(value)) return null;
+  const tag = comparesExactly(filter) && filter.key === TAGS_KEY;
+  return listCondition(
+    { operator, column, value: tag ? tagText(value) : value, ignoreCase: tag },
+    parameters,
+  );
+}
+
+/** A filter as a comparison of the view's cell. */
+function cellCondition(
+  filter: QueryFilter,
+  parameters: (string | number)[],
   { resolveLink }: QueryReach,
 ): string {
   const column = identifier(filter.key, 'filter column');
@@ -408,7 +452,10 @@ function tagCondition(
   tag: string,
   parameters: (string | number)[],
 ): string {
-  parameters.push(tag.trim().replace(/^#/, ''));
+  parameters.push(tagText(tag));
   const negated = filter.operator === 'isNot' ? ' NOT' : '';
   return `${column} IS${negated} ? COLLATE NOCASE`;
 }
+
+/** A tag as it is compared: neither a leading `#` nor the space around it counts. */
+const tagText = (tag: string): string => tag.trim().replace(/^#/, '');

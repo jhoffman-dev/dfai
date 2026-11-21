@@ -14,7 +14,7 @@ use rusqlite::StatementStatus;
 const MEETING_VIEW: &str = r#"SELECT n.path AS "path",
        COALESCE((SELECT MAX(CASE WHEN p.key = 'title' THEN p.value_text END) FROM props AS p WHERE p.path = n.path AND p.key = 'title' AND COALESCE(p.value_text, p.value_json, '') <> ''), n.title) AS "title",
        n.summary AS "summary",
-       n.modified AS "modified", n.progress AS "progress", (SELECT substr(min(CASE WHEN p.key = 'date' AND p.value_date IS NOT NULL THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_date END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'date' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "date", (SELECT CASE WHEN count(CASE WHEN p.key = 'start' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'start' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'start' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "start", (SELECT CASE WHEN count(CASE WHEN p.key = 'end' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'end' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'end' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "end", (SELECT CASE WHEN count(CASE WHEN p.key = 'kind' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'kind' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'kind' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "kind", (SELECT CASE WHEN count(CASE WHEN p.key = 'provider' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'provider' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'provider' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "provider", (SELECT CASE WHEN count(CASE WHEN p.key = 'external_id' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'external_id' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'external_id' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "external_id", (SELECT group_concat(CASE WHEN p.key = 'people' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'people' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "people", (SELECT group_concat(CASE WHEN p.key = 'companies' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'companies' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "companies", (SELECT substr(min(CASE WHEN p.key = 'project' THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_text END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'project' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "project", (SELECT group_concat(CASE WHEN p.key = 'tasks' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'tasks' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "tasks", (SELECT group_concat(CASE WHEN p.key = 'decisions' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'decisions' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "decisions", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_import_outcome' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_import_outcome' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_import_outcome' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_import_outcome", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_import_error' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_import_error' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_import_error' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_import_error", (SELECT substr(min(CASE WHEN p.key = 'atlas_duplicate_of' THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_text END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_duplicate_of' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_duplicate_of", (SELECT group_concat(CASE WHEN p.key = 'attendees' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'attendees' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "attendees", (SELECT substr(min(CASE WHEN p.key = 'follow_up' AND p.value_date IS NOT NULL THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_date END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'follow_up' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "follow_up", (SELECT CASE WHEN count(CASE WHEN p.key = 'rating' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'rating' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'rating' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "rating", (SELECT group_concat(CASE WHEN p.key = 'topics' THEN p.value_text END, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'topics' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "topics", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_digest' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_digest' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_digest' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_digest", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_of' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_of' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_of' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_of", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_model' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_model' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_model' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_model"
+       n.modified AS "modified", n.progress AS "progress", (SELECT substr(min(CASE WHEN p.key = 'date' AND p.value_date IS NOT NULL THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_date END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'date' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "date", (SELECT CASE WHEN count(CASE WHEN p.key = 'start' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'start' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'start' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "start", (SELECT CASE WHEN count(CASE WHEN p.key = 'end' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'end' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'end' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "end", (SELECT CASE WHEN count(CASE WHEN p.key = 'kind' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'kind' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'kind' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "kind", (SELECT CASE WHEN count(CASE WHEN p.key = 'provider' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'provider' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'provider' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "provider", (SELECT CASE WHEN count(CASE WHEN p.key = 'external_id' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'external_id' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'external_id' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "external_id", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'people' AND p.value_text <> '') AS "people", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'companies' AND p.value_text <> '') AS "companies", (SELECT substr(min(CASE WHEN p.key = 'project' THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_text END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'project' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "project", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'tasks' AND p.value_text <> '') AS "tasks", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'decisions' AND p.value_text <> '') AS "decisions", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_import_outcome' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_import_outcome' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_import_outcome' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_import_outcome", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_import_error' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_import_error' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_import_error' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_import_error", (SELECT substr(min(CASE WHEN p.key = 'atlas_duplicate_of' THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_text END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_duplicate_of' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_duplicate_of", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'attendees' AND p.value_text <> '') AS "attendees", (SELECT substr(min(CASE WHEN p.key = 'follow_up' AND p.value_date IS NOT NULL THEN (p.idx * 4294967296 + p.rowid + 1000000000000000000) || p.value_date END), 20) FROM props AS p WHERE p.path = n.path AND p.key = 'follow_up' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "follow_up", (SELECT CASE WHEN count(CASE WHEN p.key = 'rating' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'rating' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'rating' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "rating", (SELECT group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = 'topics' AND p.value_text <> '') AS "topics", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_digest' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_digest' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_digest' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_digest", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_of' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_of' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_of' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_of", (SELECT CASE WHEN count(CASE WHEN p.key = 'atlas_summary_model' THEN 1 END) = 1 THEN max(CASE WHEN p.key = 'atlas_summary_model' THEN p.value_text END) END FROM props AS p WHERE p.path = n.path AND p.key = 'atlas_summary_model' AND COALESCE(p.value_text, p.value_json, '') <> '') AS "atlas_summary_model"
 FROM files AS n
 WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND lower(trim(value_text)) = 'meeting')"#;
 
@@ -34,13 +34,38 @@ WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.
   LIMIT ?)
 ORDER BY NULLIF("date", '') DESC NULLS LAST, "path" ASC"#;
 
-/// A saved view of the meetings someone was in, by start time.
+/// A saved view of the meetings someone was in, by start time: the people
+/// matched item by item in the index (#923).
 const MEETING_TABLE_FILTERED: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
-WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "people" LIKE '%' || ? || '%'
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')
   ORDER BY NULLIF("start", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("start", '') ASC NULLS LAST, "path" ASC"#;
+
+/// A saved view filtered by two list columns at once (#923).
+const MEETING_TABLE_TWO_LIST_FILTERS: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
+FROM "v_meeting"
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%') AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')
+  ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
+  LIMIT ?)
+ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
+
+/// A list column `is` a link, compared as text (no link resolver): its one item (#923).
+const MEETING_TABLE_PERSON_IS: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
+FROM "v_meeting"
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid))
+  ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
+  LIMIT ?)
+ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
+
+/// The meetings with no tasks: a list column `is empty` (#923).
+const MEETING_TABLE_WITHOUT_TASKS: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
+FROM "v_meeting"
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" NOT IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '')
+  ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
+  LIMIT ?)
+ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 
 /// The table after a click on People's header, twice: a list column, sorted by its joined cell.
 const MEETING_SORT_BY_PEOPLE: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
@@ -50,10 +75,24 @@ WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.
   LIMIT ?)
 ORDER BY NULLIF("people", '') DESC NULLS LAST, "path" ASC"#;
 
+/// Sorted by two list columns, each by its joined cell (#923).
+const MEETING_SORT_BY_TWO_LISTS: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
+FROM "v_meeting"
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
+  ORDER BY NULLIF("people", '') DESC NULLS LAST, NULLIF("tasks", '') ASC NULLS LAST, "path" ASC
+  LIMIT ?)
+ORDER BY NULLIF("people", '') DESC NULLS LAST, NULLIF("tasks", '') ASC NULLS LAST, "path" ASC"#;
+
 /// The sidebar's count of a quick view over meetings, and a dashboard's number widget.
 const MEETING_COUNT: &str = r#"SELECT COUNT(*) AS "value"
 FROM "v_meeting"
 WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
+LIMIT ?"#;
+
+/// The same count of a view filtered by a list column (#923).
+const MEETING_COUNT_FILTERED: &str = r#"SELECT COUNT(*) AS "value"
+FROM "v_meeting"
+WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')
 LIMIT ?"#;
 
 /// A dashboard's chart of meetings by kind.
@@ -64,24 +103,78 @@ GROUP BY COALESCE("kind", '')
 ORDER BY "count" DESC, "label" ASC
 LIMIT ?"#;
 
+/// A dashboard's chart of meetings by their people: one group per joined cell.
+const MEETING_GROUPS_BY_PEOPLE: &str = r#"SELECT COALESCE("people", '') AS "label", COUNT(*) AS "count"
+FROM "v_meeting"
+WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/'
+GROUP BY COALESCE("people", '')
+ORDER BY "count" DESC, "label" ASC
+LIMIT ?"#;
+
+/// The same chart of a view filtered by a list column (#923).
+const MEETING_GROUPS_BY_PEOPLE_FILTERED: &str = r#"SELECT COALESCE("people", '') AS "label", COUNT(*) AS "count"
+FROM "v_meeting"
+WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND "path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')
+GROUP BY COALESCE("people", '')
+ORDER BY "count" DESC, "label" ASC
+LIMIT ?"#;
+
 /// Each statement the tests run, with what it binds.
-fn statements() -> [(&'static str, &'static str, Vec<serde_json::Value>); 6] {
+fn statements() -> [(&'static str, &'static str, Vec<serde_json::Value>); 13] {
     let limit = || serde_json::json!(500);
+    let text = |value: &str| serde_json::json!(value);
     [
         ("table, by title", MEETING_TABLE, vec![limit()]),
         ("table, by date desc", MEETING_TABLE_BY_DATE, vec![limit()]),
         (
             "view, filtered by person",
             MEETING_TABLE_FILTERED,
-            vec![serde_json::json!("Mara"), limit()],
+            vec![text("people"), text("Mara"), limit()],
+        ),
+        (
+            "view, filtered by people and tasks",
+            MEETING_TABLE_TWO_LIST_FILTERS,
+            vec![
+                text("people"),
+                text("Mara"),
+                text("tasks"),
+                text("Follow"),
+                limit(),
+            ],
+        ),
+        (
+            "view, people is a link as text",
+            MEETING_TABLE_PERSON_IS,
+            vec![text("people"), text("[[Mara Quill]]"), limit()],
+        ),
+        (
+            "view, tasks empty",
+            MEETING_TABLE_WITHOUT_TASKS,
+            vec![text("tasks"), limit()],
         ),
         (
             "table, by people desc",
             MEETING_SORT_BY_PEOPLE,
             vec![limit()],
         ),
+        (
+            "table, by people desc then tasks",
+            MEETING_SORT_BY_TWO_LISTS,
+            vec![limit()],
+        ),
         ("count", MEETING_COUNT, vec![limit()]),
+        (
+            "count, filtered by person",
+            MEETING_COUNT_FILTERED,
+            vec![text("people"), text("Mara"), limit()],
+        ),
         ("groups by kind", MEETING_GROUPS, vec![limit()]),
+        ("groups by people", MEETING_GROUPS_BY_PEOPLE, vec![limit()]),
+        (
+            "groups by people, filtered by person",
+            MEETING_GROUPS_BY_PEOPLE_FILTERED,
+            vec![text("people"), text("Mara"), limit()],
+        ),
     ]
 }
 
@@ -289,7 +382,7 @@ struct Bound {
     share: f64,
 }
 
-const BOUNDS: [Bound; 5] = [
+const BOUNDS: [Bound; 13] = [
     // Opening the table: the page's own rows plus each note's sort cell, about 72 a note.
     Bound {
         statement: MEETING_TABLE,
@@ -308,25 +401,74 @@ const BOUNDS: [Bound; 5] = [
         per_note: 25,
         share: 0.1,
     },
-    // A filter on a list column builds that cell for every note, about 200 a
-    // note, so it stops near 25,000 meetings: tracked in #923, this holds it there.
+    // A filter on a list column reads the key's items, not each note's joined
+    // cell (#923): about 131 a note, where every meeting matches (was about 200).
     Bound {
         statement: MEETING_TABLE_FILTERED,
-        per_note: 250,
-        share: 1.0,
+        per_note: 160,
+        share: 0.75,
     },
-    // A sort on a list column, the same: tracked in #923.
+    // Two list filters, each its own lookup of items: about 127 a note.
+    Bound {
+        statement: MEETING_TABLE_TWO_LIST_FILTERS,
+        per_note: 160,
+        share: 0.75,
+    },
+    // A list `is` one item: a seek on the value, about 70 a note.
+    Bound {
+        statement: MEETING_TABLE_PERSON_IS,
+        per_note: 90,
+        share: 0.4,
+    },
+    // A list `is empty`: the notes with an item, left out, about 71 a note.
+    Bound {
+        statement: MEETING_TABLE_WITHOUT_TASKS,
+        per_note: 90,
+        share: 0.45,
+    },
+    // A sort on a list column still joins each note's cell, which its order is
+    // made of; read from its items alone (#923), about 141 a note (was about 200).
     Bound {
         statement: MEETING_SORT_BY_PEOPLE,
-        per_note: 250,
-        share: 1.0,
+        per_note: 175,
+        share: 0.8,
+    },
+    // Two list sorts join two cells a note: about 177 a note, so they stop near
+    // 28,000 meetings (#923).
+    Bound {
+        statement: MEETING_SORT_BY_TWO_LISTS,
+        per_note: 215,
+        share: 0.95,
+    },
+    // A count of a view filtered by a list: about 70 a note.
+    Bound {
+        statement: MEETING_COUNT_FILTERED,
+        per_note: 90,
+        share: 0.4,
+    },
+    // A chart by a list column groups by each note's joined cell: about 127 a note.
+    Bound {
+        statement: MEETING_GROUPS_BY_PEOPLE,
+        per_note: 155,
+        share: 0.65,
+    },
+    // The same chart, filtered by a list: the cell of each note kept, about 179
+    // a note where every meeting matches.
+    Bound {
+        statement: MEETING_GROUPS_BY_PEOPLE_FILTERED,
+        per_note: 215,
+        share: 0.9,
+    },
+    // A chart by a single-valued column: about 61 a note.
+    Bound {
+        statement: MEETING_GROUPS,
+        per_note: 75,
+        share: 0.35,
     },
 ];
 
-/// The guard (#919): each statement's cost per meeting, between 5,000 and
-/// 20,000 meetings, and its share of the budget at 20,000, within its bound.
-/// Two list filters or two list sorts at once still pass the budget near
-/// 20,000; their failing tests are #923's (branch `attack-921`).
+/// The guard (#919, #923): each statement's cost per meeting, between 5,000
+/// and 20,000 meetings, and its share of the budget at 20,000, within its bound.
 #[test]
 fn a_type_table_costs_a_bounded_number_of_steps_per_note() {
     let (small, _small_index) = vault_of(5_000);
@@ -334,9 +476,10 @@ fn a_type_table_costs_a_bounded_number_of_steps_per_note() {
     for (name, sql, parameters) in statements() {
         let answered = large_index.query(large.path(), sql, &parameters);
         assert!(answered.is_ok(), "{name}: {answered:?}");
-        let Some(bound) = BOUNDS.iter().find(|bound| bound.statement == sql) else {
-            continue;
-        };
+        let bound = BOUNDS
+            .iter()
+            .find(|bound| bound.statement == sql)
+            .unwrap_or_else(|| panic!("{name} has no bound"));
         let at_small = steps_of(small.path(), sql, &parameters);
         let at_large = steps_of(large.path(), sql, &parameters);
         let per_note = (at_large - at_small) / 15_000;

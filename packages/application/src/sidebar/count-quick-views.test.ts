@@ -101,6 +101,32 @@ describe('countQuickViews', () => {
     expect(query).toHaveBeenCalledWith(expected.sql, expected.parameters);
   });
 
+  it('counts a view filtered by a list from the notes whose items match (#923)', async () => {
+    const view = {
+      atlas: 'view',
+      type: 'meeting',
+      filters: [{ key: 'people', operator: 'contains', value: 'Mara' }],
+    };
+    const meeting = parseObjectType({
+      name: 'meeting',
+      properties: { people: { kind: 'relation', target: 'person', many: true } },
+    });
+    const query = vi.fn<IndexPort['query']>(async () => rowsOf(3));
+
+    const counts = await countQuickViews({
+      fs: vaultOf({ [INBOX.entry.path]: noteWith(view) }),
+      markdown,
+      index: fakeIndexPort({ query }),
+      quick: [INBOX],
+      types: [meeting],
+      notePaths: [],
+    });
+
+    expect(query.mock.calls[0]?.[0]).toContain('"path" IN (SELECT p.path FROM props AS p');
+    expect(query.mock.calls[0]?.[1]).toEqual(['people', 'Mara', 500]);
+    expect(counts.get('inbox')).toBe(3);
+  });
+
   it('asks the index for a count rather than fetching the rows to count them', async () => {
     const fs = vaultOf({ [INBOX.entry.path]: noteWith({ atlas: 'view', type: 'task' }) });
     const query = vi.fn<IndexPort['query']>(async () => rowsOf(7));

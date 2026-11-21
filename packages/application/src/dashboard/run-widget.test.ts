@@ -582,3 +582,48 @@ describe('runWidget: a query widget (ADR-0019)', () => {
     expect(result.data).toEqual({ shape: 'error', message: 'There is no type called tsk.' });
   });
 });
+
+describe('a widget filtered by a list (#923)', () => {
+  const meeting = parseObjectType({
+    name: 'meeting',
+    properties: { people: { kind: 'relation', target: 'person', many: true } },
+  });
+  const filters = [{ key: 'people', operator: 'contains', value: 'Mara' }];
+  const LOOKUP = 'FROM props AS p WHERE p.key = ?';
+
+  const askedBy = async (source: Record<string, unknown>, types = [meeting]) => {
+    const asked: { sql: string; parameters: readonly unknown[] }[] = [];
+    await runWidget({
+      index: fakeIndexPort({
+        query: async (sql, parameters) => {
+          asked.push({ sql, parameters });
+          return { columns: ['value'], rows: [[1]], truncated: false };
+        },
+      }),
+      widget: widgetFor(source),
+      types,
+    });
+    return asked;
+  };
+
+  it('asks the index for the notes whose items match, by the type’s columns', async () => {
+    const [asked] = await askedBy({ kind: 'number', type: 'meeting', aggregate: 'count', filters });
+    expect(asked?.sql).toContain(LOOKUP);
+    expect(asked?.parameters).toEqual(['people', 'Mara', 500]);
+  });
+
+  it('asks each of a hero’s questions the same way', async () => {
+    const asked = await askedBy({ kind: 'hero', type: 'meeting', groupBy: 'people', filters });
+    expect(asked).toHaveLength(2);
+    for (const { sql } of asked) expect(sql).toContain(LOOKUP);
+  });
+
+  it('compares the cell when the type is not known', async () => {
+    const [asked] = await askedBy(
+      { kind: 'number', type: 'meeting', aggregate: 'count', filters },
+      [],
+    );
+    expect(asked?.sql).not.toContain(LOOKUP);
+    expect(asked?.sql).toContain(`"people" LIKE '%' || ? || '%'`);
+  });
+});

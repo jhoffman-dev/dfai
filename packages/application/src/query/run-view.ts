@@ -2,9 +2,10 @@ import {
   carriesChecklistProgress,
   compileViewQuery,
   foldedTypeName,
-  isViewColumn,
+  typeViewColumns,
   typeViewSelectSql,
   type ObjectType,
+  type TypeViewColumn,
   type ViewQuery,
 } from '@dfai/domain';
 import type { IndexPort, QueryResult, ViewTypeSpec } from '../index/ports.ts';
@@ -24,19 +25,36 @@ export interface ViewResult extends QueryResult {
 export async function runView({
   index,
   query,
+  type = null,
   includeArchived = false,
   resolveLink,
 }: {
   index: IndexPort;
   query: ViewQuery;
+  /** The type the view lists, so a filter on a list asks for the notes whose items match (`QueryReach`). */
+  type?: ObjectType | null;
   /** Lists archived notes too; they are out of the way unless asked for (U-22). */
   includeArchived?: boolean;
   /** The note a link opens, so a filter by a link keeps every link to that note (`QueryReach`). */
   resolveLink?: ((target: string) => string | null) | undefined;
 }): Promise<ViewResult> {
-  const compiled = compileViewQuery(query, {}, { includeArchived, resolveLink });
+  const viewColumns = viewColumnsOf(type === null ? [] : [type], query.type);
+  const compiled = compileViewQuery(query, {}, { includeArchived, resolveLink, viewColumns });
   const result = await index.query(compiled.sql, compiled.parameters);
   return { ...result, sql: compiled.sql };
+}
+
+/**
+ * The columns the index made the view of the type named `typeName` from, as
+ * `viewSpecsFor` makes them; undefined when no type is named so, and every
+ * filter then compares the view's cell.
+ */
+export function viewColumnsOf(
+  types: readonly ObjectType[],
+  typeName: string,
+): TypeViewColumn[] | undefined {
+  const type = types.find((candidate) => candidate.name === typeName);
+  return type === undefined ? undefined : typeViewColumns(type);
 }
 
 /**
@@ -61,9 +79,7 @@ export function viewSpecsFor(types: readonly ObjectType[]): ViewTypeSpec[] {
     if ((spellings.get(foldedTypeName(type.name)) ?? 0) > 1) return [];
     const select = typeViewSelectSql({
       name: type.name,
-      columns: type.properties
-        .filter((property) => !isViewColumn(property.key))
-        .map((property) => ({ key: property.key, kind: property.kind, many: property.many })),
+      columns: typeViewColumns(type),
       progress: carriesChecklistProgress(type),
     });
     return select === null ? [] : [{ name: type.name, select }];

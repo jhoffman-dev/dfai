@@ -7,8 +7,11 @@ import {
   typeTableQuery,
   type CompiledQuery,
   type ObjectType,
+  type QueryFilter,
+  type QueryShape,
+  type ViewQuery,
 } from '@dfai/domain';
-import { viewSpecsFor } from './run-view.ts';
+import { viewColumnsOf, viewSpecsFor } from './run-view.ts';
 
 /**
  * The index's type-table budget tests (#919,
@@ -68,23 +71,35 @@ function meetingType(): ObjectType {
 const type = meetingType();
 const table = typeTableQuery(type);
 
+/** What the app compiles with: the columns the index made the Meeting view of (#923). */
+const reach = { viewColumns: viewColumnsOf([type], type.name) };
+const view = (over: Partial<ViewQuery>, shape: QueryShape = {}) =>
+  compileViewQuery({ ...table, ...over }, shape, reach);
+const MARA: QueryFilter = { key: 'people', operator: 'contains', value: 'Mara' };
+
 const STATEMENTS: Record<string, CompiledQuery> = {
-  MEETING_TABLE: compileViewQuery(table),
-  MEETING_TABLE_BY_DATE: compileViewQuery({
-    ...table,
-    sorts: [{ key: 'date', direction: 'desc' }],
+  MEETING_TABLE: view({}),
+  MEETING_TABLE_BY_DATE: view({ sorts: [{ key: 'date', direction: 'desc' }] }),
+  MEETING_TABLE_FILTERED: view({ filters: [MARA], sorts: [{ key: 'start', direction: 'asc' }] }),
+  MEETING_TABLE_TWO_LIST_FILTERS: view({
+    filters: [MARA, { key: 'tasks', operator: 'contains', value: 'Follow' }],
   }),
-  MEETING_TABLE_FILTERED: compileViewQuery({
-    ...table,
-    filters: [{ key: 'people', operator: 'contains', value: 'Mara' }],
-    sorts: [{ key: 'start', direction: 'asc' }],
+  MEETING_TABLE_PERSON_IS: view({
+    filters: [{ key: 'people', operator: 'is', value: '[[Mara Quill]]' }],
   }),
-  MEETING_SORT_BY_PEOPLE: compileViewQuery({
-    ...table,
-    sorts: [{ key: 'people', direction: 'desc' }],
+  MEETING_TABLE_WITHOUT_TASKS: view({ filters: [{ key: 'tasks', operator: 'isEmpty' }] }),
+  MEETING_SORT_BY_PEOPLE: view({ sorts: [{ key: 'people', direction: 'desc' }] }),
+  MEETING_SORT_BY_TWO_LISTS: view({
+    sorts: [
+      { key: 'people', direction: 'desc' },
+      { key: 'tasks', direction: 'asc' },
+    ],
   }),
-  MEETING_COUNT: compileViewQuery(table, { aggregate: { kind: 'count', column: null } }),
-  MEETING_GROUPS: compileViewQuery(table, { groupBy: 'kind' }),
+  MEETING_COUNT: view({}, { aggregate: { kind: 'count', column: null } }),
+  MEETING_COUNT_FILTERED: view({ filters: [MARA] }, { aggregate: { kind: 'count', column: null } }),
+  MEETING_GROUPS: view({}, { groupBy: 'kind' }),
+  MEETING_GROUPS_BY_PEOPLE: view({}, { groupBy: 'people' }),
+  MEETING_GROUPS_BY_PEOPLE_FILTERED: view({ filters: [MARA] }, { groupBy: 'people' }),
 };
 
 describe('the SQL the type-table budget tests run is the SQL TypeScript writes (#919)', () => {
@@ -97,15 +112,30 @@ describe('the SQL the type-table budget tests run is the SQL TypeScript writes (
   });
 
   it('binds what the Rust tests bind', () => {
-    expect(STATEMENTS['MEETING_TABLE_FILTERED']?.parameters).toEqual(['Mara', 500]);
-    for (const name of [
-      'MEETING_TABLE',
-      'MEETING_TABLE_BY_DATE',
-      'MEETING_SORT_BY_PEOPLE',
-      'MEETING_COUNT',
-      'MEETING_GROUPS',
-    ]) {
-      expect(STATEMENTS[name]?.parameters).toEqual([500]);
-    }
+    const bound = Object.fromEntries(
+      Object.entries(STATEMENTS).map(([name, { parameters }]) => [name, parameters]),
+    );
+    expect(bound).toEqual({
+      MEETING_TABLE: [500],
+      MEETING_TABLE_BY_DATE: [500],
+      MEETING_TABLE_FILTERED: ['people', 'Mara', 500],
+      MEETING_TABLE_TWO_LIST_FILTERS: ['people', 'Mara', 'tasks', 'Follow', 500],
+      MEETING_TABLE_PERSON_IS: ['people', '[[Mara Quill]]', 500],
+      MEETING_TABLE_WITHOUT_TASKS: ['tasks', 500],
+      MEETING_SORT_BY_PEOPLE: [500],
+      MEETING_SORT_BY_TWO_LISTS: [500],
+      MEETING_COUNT: [500],
+      MEETING_COUNT_FILTERED: ['people', 'Mara', 500],
+      MEETING_GROUPS: [500],
+      MEETING_GROUPS_BY_PEOPLE: [500],
+      MEETING_GROUPS_BY_PEOPLE_FILTERED: ['people', 'Mara', 500],
+    });
+  });
+
+  it('every statement the Rust tests run is one written here', () => {
+    const constants = [...TESTS_RS.matchAll(/^const (MEETING_\w+): &str = r#"/gm)].map(
+      (found) => found[1],
+    );
+    expect(constants.sort()).toEqual(['MEETING_VIEW', ...Object.keys(STATEMENTS)].sort());
   });
 });

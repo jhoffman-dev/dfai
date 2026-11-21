@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseObjectType, typeViewSelectSql } from '@dfai/domain';
-import { viewSpecsFor } from './run-view.ts';
+import { fakeIndexPort } from '../testing/fake-ports.ts';
+import { runView, viewColumnsOf, viewSpecsFor } from './run-view.ts';
 
 describe('viewSpecsFor', () => {
   it('asks for a column per declared property, with its kind and whether it holds several', () => {
@@ -67,5 +68,50 @@ describe('viewSpecsFor', () => {
       parseObjectType({ name: 'project', properties: {} }),
     ]);
     expect(specs.map((spec) => spec.name)).toEqual(['project']);
+  });
+});
+
+describe('viewColumnsOf', () => {
+  const meeting = parseObjectType({
+    name: 'meeting',
+    properties: { people: { kind: 'relation', target: 'person', many: true }, title: 'text' },
+  });
+
+  it('is the columns the index makes the type’s view of', () => {
+    expect(viewColumnsOf([meeting], 'meeting')).toEqual([
+      { key: 'people', kind: 'relation', many: true },
+    ]);
+  });
+
+  it('is none for a type it does not hold, so every filter compares the cell', () => {
+    expect(viewColumnsOf([meeting], 'Meeting')).toBeUndefined();
+    expect(viewColumnsOf([], 'meeting')).toBeUndefined();
+  });
+});
+
+describe('runView', () => {
+  it('looks a filter on a list up by its items when it knows the type (#923)', async () => {
+    const meeting = parseObjectType({
+      name: 'meeting',
+      properties: { people: { kind: 'relation', target: 'person', many: true } },
+    });
+    const query = {
+      type: 'meeting',
+      columns: ['people'],
+      filters: [{ key: 'people', operator: 'contains', value: 'Mara' }] as const,
+      sorts: [],
+      limit: 5,
+    };
+    const asked: string[] = [];
+    const index = fakeIndexPort({
+      query: async (sql) => {
+        asked.push(sql);
+        return { columns: [], rows: [], truncated: false };
+      },
+    });
+    await runView({ index, query, type: meeting });
+    await runView({ index, query });
+    expect(asked[0]).toContain('FROM props AS p WHERE p.key = ?');
+    expect(asked[1]).not.toContain('FROM props AS p WHERE p.key = ?');
   });
 });
