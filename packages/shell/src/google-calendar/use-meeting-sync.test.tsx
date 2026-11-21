@@ -243,6 +243,44 @@ describe('useMeetingSync (ADR-0046)', () => {
     expect(google.state.asked).toHaveLength(2);
   });
 
+  it('stops with Meetings switched off — its ports taken away — and syncs again when it is back on (#901)', async () => {
+    const { hook, google, options } = setUp();
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    // The window hands no ports with Meetings off (`working.meetingSync`).
+    hook.rerender({ ...options, meetings: null });
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS * 2));
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    expect(hook.result.current.enabled).toBe(false);
+
+    hook.rerender(options);
+    await settle();
+    expect(google.state.asked).toHaveLength(2);
+    await act(async () => vi.advanceTimersByTime(MEETING_SYNC_INTERVAL_MS));
+    await settle();
+    expect(google.state.asked).toHaveLength(3);
+  });
+
+  it('writes nothing more once Meetings goes off while a sync is under way (#901)', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { hook, google, created, options } = setUp();
+    const listEvents = google.source.listEvents;
+    google.source.listEvents = async (ask) => {
+      await held;
+      return listEvents(ask);
+    };
+    await settle();
+    hook.rerender({ ...options, meetings: null });
+    release();
+    await settle();
+    expect(google.state.asked).toHaveLength(1);
+    expect(created).toEqual([]);
+  });
+
   it('writes nothing more once stopped while a sync is under way', async () => {
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => {

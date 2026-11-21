@@ -3,7 +3,8 @@
  * that what they never use leaves the view. Switching one off deletes
  * nothing: its notes and files stay, and switching it on brings it back.
  */
-export type FeatureId = 'reading' | 'kindle' | 'ask' | 'graph' | 'slack';
+export type FeatureId =
+  'reading' | 'kindle' | 'ask' | 'automations' | 'meetings' | 'graph' | 'slack';
 
 /** One key feature: what Settings calls it, the line saying what it is, and what it cannot work without. */
 export interface Feature<Id extends string = FeatureId> {
@@ -32,6 +33,19 @@ export const FEATURES: readonly Feature[] = [
     id: 'ask',
     label: 'Ask and Claude chat',
     summary: 'Ask questions of the vault, and chat with Claude beside your notes.',
+    requires: [],
+  },
+  {
+    id: 'automations',
+    label: 'Automations',
+    summary: 'Rules that file, archive and write notes on a schedule or as notes change.',
+    // Not Meetings: most rules act on any note, and a meeting note made by hand is still one.
+    requires: [],
+  },
+  {
+    id: 'meetings',
+    label: 'Meetings',
+    summary: 'Meetings pulled from Granola and read from Google Calendar as notes.',
     requires: [],
   },
   {

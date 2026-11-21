@@ -34,6 +34,8 @@ const NEEDS = {
   googleCalendarSettings: ['googleCalendar'],
   /** Today's meetings read from the calendar, on their own clock. */
   meetingSync: ['googleCalendar'],
+  /** Settings → Google Calendar's meetings: their switch, calendars and Sync now. */
+  meetingSyncSettings: ['googleCalendar'],
   /** Time blocks written to and read from their calendar, on their own clock. */
   blockSync: ['googleCalendar'],
   /** Settings → Granola. */
@@ -109,6 +111,15 @@ const NEEDS = {
   addDocuments: [],
   /** The graph: its sidebar row, its page, and a note's Show in graph. */
   graphPage: [],
+  /** The Automations page and its sidebar row: the rules, their editor, Run now, dry runs and presets. */
+  automationsPage: [],
+  /**
+   * The rules run by themselves: on their schedule, on opening the vault and
+   * on a note's news, with the prompts refreshed and the rules taken in.
+   */
+  automationsRunner: [],
+  /** Meetings that arrive by pull, checked, deduplicated and marked (P28-04), on the automations Mac. */
+  meetingImport: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
@@ -125,11 +136,14 @@ const FEATURE_OF = {
   globalCaptureSettings: null,
   globalCaptureShortcut: null,
   secretsSettings: null,
+  // Settings → Google Calendar holds the sign-in that time blocks share (ADR-0030):
+  // only its meetings part is Meetings', and block sync follows the platform alone.
   googleCalendarSettings: null,
-  meetingSync: null,
+  meetingSync: 'meetings',
+  meetingSyncSettings: 'meetings',
   blockSync: null,
-  granolaSettings: null,
-  granolaPull: null,
+  granolaSettings: 'meetings',
+  granolaPull: 'meetings',
   slackSettings: 'slack',
   slackLinkOffer: 'slack',
   kindleSettings: 'kindle',
@@ -140,9 +154,10 @@ const FEATURE_OF = {
   claudeSettings: null,
   claudeChat: 'ask',
   chatWork: 'ask',
+  // Suggest is the Inbox's, not a rule's: it stays with Automations off, as with Ask off.
   inboxSuggest: null,
   skillDraft: null,
-  claudeAutomations: null,
+  claudeAutomations: 'automations',
   syncSettings: null,
   syncLight: null,
   backgroundSync: null,
@@ -161,6 +176,9 @@ const FEATURE_OF = {
   documentReader: 'reading',
   addDocuments: 'reading',
   graphPage: 'graph',
+  automationsPage: 'automations',
+  automationsRunner: 'automations',
+  meetingImport: 'meetings',
 } as const satisfies Readonly<Record<EntryPoint, FeatureId | null>>;
 
 /** The entry points a switch in Settings → Features can take away. */
@@ -193,6 +211,16 @@ const KIND_OF = {
   documentReader: 'draws',
   addDocuments: 'draws',
   graphPage: 'draws',
+  // The editor's Ask Claude, the meeting set-up's offer and the presets with a Claude step:
+  // what runs them is `automationsRunner`.
+  claudeAutomations: 'draws',
+  automationsPage: 'draws',
+  automationsRunner: 'work',
+  meetingSyncSettings: 'draws',
+  meetingSync: 'work',
+  granolaSettings: 'draws',
+  granolaPull: 'work',
+  meetingImport: 'work',
 } as const satisfies Readonly<Record<SwitchableEntry, 'draws' | 'work'>>;
 
 /** The entry points of a switchable feature that start work by themselves, which wait for the settings. */
@@ -217,6 +245,7 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
   document: 'documentReader',
   ask: 'claudeChat',
   graph: 'graphPage',
+  automations: 'automationsPage',
 };
 
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */

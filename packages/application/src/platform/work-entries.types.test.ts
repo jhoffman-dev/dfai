@@ -10,7 +10,15 @@ import type { EntryPoint, WorkEntry, WorkOffered } from './entry-points.ts';
 
 describe('the work entries, at compile time', () => {
   it('are exactly the runners, timers and listeners of a switchable feature', () => {
-    expectTypeOf<WorkEntry>().toEqualTypeOf<'kindleSync' | 'slackLinkOffer' | 'chatWork'>();
+    expectTypeOf<WorkEntry>().toEqualTypeOf<
+      | 'kindleSync'
+      | 'slackLinkOffer'
+      | 'chatWork'
+      | 'automationsRunner'
+      | 'meetingSync'
+      | 'granolaPull'
+      | 'meetingImport'
+    >();
     expectTypeOf<WorkEntry>().toMatchTypeOf<EntryPoint>();
   });
 
@@ -20,5 +28,7 @@ describe('the work entries, at compile time', () => {
     expectTypeOf<WorkOffered['libraryPages']>().toBeBoolean();
     // @ts-expect-error a runner of no switchable feature follows the platform alone, through `offered`.
     expectTypeOf<WorkOffered['backgroundSync']>().toBeBoolean();
+    // @ts-expect-error time blocks share Google's sign-in with Meetings, but are not Meetings'.
+    expectTypeOf<WorkOffered['blockSync']>().toBeBoolean();
   });
 });

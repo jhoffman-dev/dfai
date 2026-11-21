@@ -83,7 +83,7 @@ const HIDES: Readonly<Record<PlatformCapability, readonly EntryPoint[]>> = {
   ],
   heldSecrets: ['secretsSettings'],
   webFetch: ['webSourceRefresh'],
-  googleCalendar: ['googleCalendarSettings', 'meetingSync', 'blockSync'],
+  googleCalendar: ['googleCalendarSettings', 'meetingSync', 'meetingSyncSettings', 'blockSync'],
   granola: ['granolaSettings', 'granolaPull'],
   slack: ['slackSettings', 'slackLinkOffer'],
   kindle: ['kindleSettings', 'kindleCommands', 'kindleSync'],
@@ -137,6 +137,16 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
     ask: ['claudeChat', 'chatWork'],
     graph: ['graphPage'],
     slack: ['slackSettings', 'slackLinkOffer'],
+    // Suggest is the Inbox's and stays (ADR-0055); the claim of the automations Mac is sync's.
+    automations: ['claudeAutomations', 'automationsPage', 'automationsRunner'],
+    // Time blocks share the Google sign-in and stay: so does Settings → Google Calendar itself.
+    meetings: [
+      'meetingSync',
+      'meetingSyncSettings',
+      'granolaSettings',
+      'granolaPull',
+      'meetingImport',
+    ],
   };
 
   /** A feature and every feature that requires it, all the way down: what switching it off takes. */
@@ -216,7 +226,15 @@ describe('entryPointsOffered, with the features switched off (#901)', () => {
 
 describe('workOffered: work that starts by itself waits for the settings (#901)', () => {
   /** Written out by hand, so an entry point added to or taken from the work shows here. */
-  const HELD: readonly WorkEntry[] = ['kindleSync', 'slackLinkOffer', 'chatWork'];
+  const HELD: readonly WorkEntry[] = [
+    'kindleSync',
+    'slackLinkOffer',
+    'chatWork',
+    'automationsRunner',
+    'meetingSync',
+    'granolaPull',
+    'meetingImport',
+  ];
   const held = (working: WorkOffered) => [...STARTS_WORK].filter((entry) => !working[entry]);
 
   it('holds, until the settings answer, every runner, timer and listener of a feature with a switch', () => {
@@ -234,7 +252,14 @@ describe('workOffered: work that starts by itself waits for the settings (#901)'
     const switchable = ENTRY_POINTS.filter((entry) => featureOfEntry(entry) !== null);
     const drawn = switchable.filter((entry) => !STARTS_WORK.has(entry as WorkEntry));
     // What is drawn shows at once, and is never in the work held for the settings.
-    for (const entry of ['claudeChat', 'graphPage', 'libraryPages', 'kindleCommands'] as const) {
+    for (const entry of [
+      'claudeChat',
+      'graphPage',
+      'libraryPages',
+      'kindleCommands',
+      'automationsPage',
+      'granolaSettings',
+    ] as const) {
       expect(drawn).toContain(entry);
     }
     expect(drawn.length + STARTS_WORK.size).toBe(switchable.length);

@@ -20,3 +20,26 @@ export function automationsScheduled({
 }): boolean | null {
   return macKnown && ownerKnown ? automationsHere : null;
 }
+
+/**
+ * Whether the clock and a note may set off rules, the person's switch taken
+ * in (#901): as `scheduled` while Automations is on; false once the vault's
+ * settings say it is off, as on a Mac that does not run them, so what a note
+ * set off is let go; and null while those settings are unread, so it is held
+ * rather than let go for a vault that leaves Automations on.
+ */
+export function switchedScheduled({
+  enabled,
+  featuresKnown,
+  scheduled,
+}: {
+  /** Whether Automations is on, held off while the settings are unread. */
+  enabled: boolean;
+  /** Whether the vault's settings have answered. */
+  featuresKnown: boolean;
+  /** Whether this Mac runs the rules, Automations aside (`automationsScheduled`). */
+  scheduled: boolean | null;
+}): boolean | null {
+  if (enabled) return scheduled;
+  return featuresKnown ? false : null;
+}

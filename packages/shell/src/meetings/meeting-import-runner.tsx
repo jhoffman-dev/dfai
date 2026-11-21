@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MeetingsWaiting } from '@dfai/domain';
 import { createRulesTakeCache, type RuleQueryPorts, type RunClock } from '@dfai/application';
 import type { AutomationsStore } from '../automations/automations-store.ts';
@@ -29,6 +29,12 @@ export type MeetingImportRunnerProps = Omit<
   readonly sync: SyncStore;
   /** Where the import says what waits for the named Mac, for the Inbox to show (ADR-0035 part 1). */
   readonly waiting: MeetingsWaitingStore;
+  /**
+   * Whether Meetings is switched on (#901, `working.meetingImport`), held off
+   * until the vault's settings answer. Off, this Mac imports nothing, as one
+   * that does not run the automations, and says nothing waits for another.
+   */
+  readonly enabled: boolean;
 };
 
 /**
@@ -43,16 +49,23 @@ export const MeetingImportRunner = memo(function MeetingImportRunner({
   waiting,
   automations,
   rulePorts,
+  enabled,
   ...options
 }: MeetingImportRunnerProps) {
-  const { automationsHere, pulledFiles, namedElsewhere, namedMacName } = useSyncForRunners(
-    sync,
-    options.vaultKey,
-  );
+  const forRunners = useSyncForRunners(sync, options.vaultKey);
+  const { pulledFiles, namedMacName } = forRunners;
+  // The claim itself is sync's and is left as it is: Meetings off only stops this Mac's import.
+  const automationsHere = enabled && forRunners.automationsHere;
+  const namedElsewhere = enabled && forRunners.namedElsewhere;
   const named = useMemo(
     () => (namedElsewhere ? { name: namedMacName } : null),
     [namedElsewhere, namedMacName],
   );
+  const vault = options.vaultKey;
+  // Switched off, the Inbox no longer says meetings wait for another Mac.
+  useEffect(() => {
+    if (!enabled && vault !== null) sayMeetingsWaiting(waiting, vault, null);
+  }, [enabled, vault, waiting]);
   const onWaiting = useCallback(
     (vault: string, said: MeetingsWaiting | null) => sayMeetingsWaiting(waiting, vault, said),
     [waiting],

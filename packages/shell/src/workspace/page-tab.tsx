@@ -20,6 +20,7 @@ import { LibraryContainer } from '../research/library-container.tsx';
 import { TodayContainer } from '../today/today-container.tsx';
 import { TypeContainer } from '../types/type-container.tsx';
 import { DocumentContainer } from '../reader/document-container.tsx';
+import { AutomationsOffPage } from '../automations/automations-off-page.tsx';
 import { FeatureOffPage } from '../features/feature-off-page.tsx';
 import { samePageWiring, type PageWiringContext } from './page-wiring.ts';
 import { useTabPageHistory } from './tab-history.ts';
@@ -114,6 +115,16 @@ function containerFor({
 }): ReactNode {
   const { features } = props.wiring.pages;
   const off = pageTurnedOff(place, features);
+  if (off === 'automations') {
+    // Runs already made stay undoable with the feature off.
+    return (
+      <AutomationsOffPage
+        wiring={props.wiring}
+        chrome={props.chrome}
+        onTurnOn={features.onTurnOn}
+      />
+    );
+  }
   if (off !== null) {
     return <FeatureOffPage feature={off} chrome={props.chrome} onTurnOn={features.onTurnOn} />;
   }

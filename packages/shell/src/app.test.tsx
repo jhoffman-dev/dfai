@@ -13,8 +13,12 @@ import {
   VaultAccessError,
   memoryActivityStore,
   memoryIndexPort,
+  fakeBlockCalendar,
+  fakeCalendarSource,
   fakeGoogleCalendar,
   fakeGranola,
+  memoryBlockSyncRecords,
+  memoryMeetingSyncRecords,
   fakeSlack,
   failed,
   fakeSleepClock,
@@ -3022,5 +3026,118 @@ describe('work that starts by itself waits for the settings, through the window 
     opened.answer();
     await waitFor(() => expect(opened.syncs).toEqual(['sync']));
     await waitFor(() => expect(opened.asked.length).toBeGreaterThan(0));
+  });
+});
+
+/**
+ * Automations and Meetings (#901, slice 3), through the window: with the
+ * settings read held, no rule runs, Granola's key is never asked after and
+ * no calendar is read for meetings; a vault that switches them off never
+ * starts them, and one that leaves them on starts them once the read
+ * answers. Time blocks share the Google sign-in and are not Meetings': they
+ * sync with Meetings off. Granola asks after its key as the vault opens, so it
+ * is the sharp case here; the rules and the meeting sync also wait on the
+ * settings note for the owner and the calendar, so for them the runner's own
+ * tests (`automations-runner.test.tsx`, `use-meeting-sync.test.tsx`) hold the
+ * switch, and this holds that the window wires them to it.
+ */
+describe('Automations and Meetings wait for the settings, through the window (#901)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const RULE = '.atlas/automations/Sweep.md';
+  const RULE_LOG = '.atlas/automations/log/Sweep.md';
+  const CLIENT_ID = '123456789012-abcdef0123456789abcdef0123456789.apps.googleusercontent.com';
+  const GOOGLE = [
+    `google_client_id: ${CLIENT_ID}`,
+    'google_calendar: dfai-blocks@group.calendar.example.com',
+    'google_meetings: true',
+    'google_blocks: true',
+  ].join('\n');
+  const SWEEP = [
+    '---',
+    'atlas: automation',
+    'name: Sweep',
+    'enabled: true',
+    'when: on app open',
+    'which: FROM task',
+    'do: archive',
+    '---',
+    '',
+  ].join('\n');
+
+  async function openWith(frontmatter: string) {
+    const files: Record<string, string> = {
+      [SETTINGS]: `---\n${frontmatter}\n${GOOGLE}\n---\n`,
+      [RULE]: SWEEP,
+    };
+    const vault = fakeVault({ remembered: location, files });
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const readNotes: VaultFsPort['readNotes'] = async (paths) => {
+      if (paths.includes(SETTINGS)) await answered;
+      return vault.fs.readNotes(paths);
+    };
+    const keyAsked: string[] = [];
+    const granolaHere = {
+      ...granola,
+      port: {
+        ...granola.port,
+        status: async () => {
+          keyAsked.push('status');
+          return { hasKey: false, lastRefusal: null };
+        },
+      },
+    };
+    const events = fakeCalendarSource({ primary: [] });
+    const blockCalendar = fakeBlockCalendar();
+    renderApp(
+      { ...vault, fs: { ...vault.fs, readNotes } },
+      memoryActivityStore(),
+      fakeGlobalCapture(),
+      {
+        granola: granolaHere,
+        meetings: { source: events.source, records: memoryMeetingSyncRecords().records },
+        blocks: { calendar: blockCalendar.calendar, records: memoryBlockSyncRecords().records },
+      },
+    );
+    expect(await screen.findByRole('button', { name: 'Graph' })).toBeDefined();
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    return {
+      answer,
+      /** What a rule's run log would say: created, or written over. */
+      ruleLog: () => vault.written[RULE_LOG] ?? files[RULE_LOG],
+      keyAsked,
+      meetingsRead: () => events.state.asked.length,
+      blocksRead: () => blockCalendar.state.asked.length,
+    };
+  }
+
+  const graphRow = () => screen.queryByRole('button', { name: 'Graph' });
+
+  it('runs no rule, asks Granola nothing and reads no meetings for a vault that switches both off', async () => {
+    const opened = await openWith('featuresOff: [automations, meetings, graph]');
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.keyAsked).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    opened.answer();
+    await waitFor(() => expect(graphRow()).toBeNull());
+    // Time blocks are not Meetings': they sync with it off (ADR-0055).
+    await waitFor(() => expect(opened.blocksRead()).toBeGreaterThan(0));
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.keyAsked).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    expect(screen.queryByRole('button', { name: 'Automations' })).toBeNull();
+  });
+
+  it('starts the rules, Granola and the meetings only once the settings say they are on', async () => {
+    const opened = await openWith('quickAdd: [task]');
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.keyAsked).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    opened.answer();
+    await waitFor(() => expect(opened.ruleLog()).toContain('Ran when DFAI opened'));
+    await waitFor(() => expect(opened.keyAsked.length).toBeGreaterThan(0));
+    await waitFor(() => expect(opened.meetingsRead()).toBeGreaterThan(0));
+    expect(screen.getByRole('button', { name: 'Automations' })).toBeDefined();
   });
 });

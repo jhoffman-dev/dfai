@@ -56,8 +56,11 @@ export interface GranolaPullOptions {
   /** Re-reads the tree and the index once a pull has written meetings into the vault. */
   readonly onWrote: () => void;
   /**
-   * Whether Granola can be reached on this platform (#657): where not, its key
-   * is never asked after and nothing is pulled, on opening or on the clock.
+   * Whether Granola can be reached on this platform (#657) and Meetings is
+   * switched on (#901, held until the vault's settings answer): where not, its
+   * key is never asked after and nothing is pulled, on opening or on the
+   * clock. A pull already under way as it goes off finishes. The key itself,
+   * held by the host, is kept.
    */
   readonly enabled: boolean;
 }
@@ -220,8 +223,11 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
       ...nothingFor(vaultKey),
       lastPullAt: vaultKey === null ? null : records.read(vaultKey).lastPullAt,
     });
+  }, [vaultKey, records]);
+  // Apart from the reset above, so Meetings switched on again (#901) keeps what the settings said.
+  useEffect(() => {
     if (vaultKey !== null && enabled) void readKey(vaultKey);
-  }, [vaultKey, records, readKey, enabled]);
+  }, [vaultKey, readKey, enabled]);
 
   const { settings, unreadable } = useVaultSettingsRead({ fs, markdown, vaultKey });
   useEffect(() => {
@@ -285,8 +291,9 @@ export function useGranolaPull(options: GranolaPullOptions): GranolaPullControll
     [pullVault],
   );
 
-  // Where Granola is not offered its key is never asked after, so nothing is ever usable.
-  const usable = mine.key?.hasKey === true && mine.key.lastRefusal === null;
+  // Where Granola is not offered its key is never asked after, so nothing is ever usable; and
+  // once it stops being offered — Meetings switched off (#901) — the clock stops with it.
+  const usable = enabled && mine.key?.hasKey === true && mine.key.lastRefusal === null;
   const periodic = mine.periodic === true;
 
   // Once per open, once the index has first caught up: a later sync's catch-up does not start another.

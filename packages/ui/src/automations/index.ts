@@ -6,3 +6,5 @@ export { DryRunResult, RunLog } from './run-log-view.tsx';
 export { ReadTwiceNotice } from './read-twice-notice.tsx';
 export type { ReadTwiceView } from './read-twice-notice.tsx';
 export type { AutomationRow, DryRunView, LogEntryView, LogLineView } from './automation-views.ts';
+export { PastRunsUndo } from './past-runs-undo.tsx';
+export type { UndoableRun } from './past-runs-undo.tsx';

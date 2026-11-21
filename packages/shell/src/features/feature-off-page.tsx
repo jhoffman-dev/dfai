@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { StoreApi } from 'zustand';
 import type { EntryPointsOffered } from '@dfai/application';
 import { featureById, type FeatureId } from '@dfai/domain';
@@ -29,14 +30,18 @@ export function FeatureOffPage({
   feature,
   chrome,
   onTurnOn,
+  children,
 }: {
   feature: FeatureId;
   chrome: PageChrome;
   onTurnOn: () => void;
+  /** What the feature leaves within reach while it is off, under the notice. */
+  children?: ReactNode;
 }) {
   return (
     <PageFrameFallback {...chrome}>
       <FeatureOffNotice label={featureById(feature).label} onTurnOn={onTurnOn} />
+      {children}
     </PageFrameFallback>
   );
 }

@@ -411,6 +411,34 @@ describe('useGranolaPull', () => {
     expect(refused.lists()).toBe(0);
   });
 
+  it('stops pulling on the clock once Meetings is switched off, and pulls again when it is back on (#901)', async () => {
+    const { hook, lists, options } = setUp();
+    await settles(() => expect(lists()).toBe(1));
+    hook.rerender({ ...options, enabled: false });
+    await fifteenMinutes();
+    await fifteenMinutes();
+    expect(lists()).toBe(1);
+
+    // On again, without the app starting over: a pull as on opening, then the clock's.
+    hook.rerender({ ...options, enabled: true });
+    await settles(() => expect(lists()).toBe(2));
+    await fifteenMinutes();
+    await settles(() => expect(lists()).toBe(3));
+  });
+
+  it('lets a pull under way as Meetings goes off finish, and starts none after it (#901)', async () => {
+    const { hook, lists, options, gate } = setUp();
+    const listing = held<void>();
+    gate.current = listing.promise;
+    await settles(() => expect(lists()).toBe(0));
+    await act(async () => {});
+    hook.rerender({ ...options, enabled: false });
+    listing.settle();
+    await settles(() => expect(hook.result.current.report?.ended).toBe('pulled'));
+    await fifteenMinutes();
+    expect(lists()).toBe(1);
+  });
+
   it('pulls every 15 minutes', async () => {
     const { hook, lists } = setUp();
     await settles(() => expect(lists()).toBe(1));
