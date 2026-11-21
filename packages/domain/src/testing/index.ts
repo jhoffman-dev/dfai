@@ -19,3 +19,4 @@ export {
   slackUserAnswer,
   TOBIAS_ID,
 } from './slack-answers.ts';
+export { EVERY_ASSIST_KIND } from './every-assist-kind.ts';

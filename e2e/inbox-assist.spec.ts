@@ -108,7 +108,7 @@ test('Suggest shows what Claude would do with each item and the sentence, and wr
 
   const suggestions = main.getByRole('region', { name: 'Suggestions' });
   await expect(suggestions.getByRole('status')).toHaveText(
-    '3 items: would act on 1, 1 question, would leave 1 Nothing is written.',
+    '3 items: would act on 1, 1 question, would leave 1 Nothing is written until you apply it.',
   );
   const call = suggestions.getByRole('listitem', { name: 'Call Mara Quill' });
   await expect(call).toContainText('Make it a task under Larkspur Payroll');
@@ -206,7 +206,7 @@ test('Suggest says which item copies a task, who it links or would add, and asks
 
   const suggestions = main.getByRole('region', { name: 'Suggestions' });
   await expect(suggestions.getByRole('status')).toHaveText(
-    '3 items: would act on 1, link 1 person, add 1 person, 1 duplicate, 1 question Nothing is written.',
+    '3 items: would act on 1, link 1 person, add 1 person, 1 duplicate, 1 question Nothing is written until you apply it.',
   );
   const renew = suggestions.getByRole('listitem', { name: 'Renew Larkspur Payroll contract' });
   await expect(renew).toContainText('Duplicate');

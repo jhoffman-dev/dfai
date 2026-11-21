@@ -83,6 +83,36 @@ export { COPY_BOOKKEEPING_KEYS } from './assist-duplicate.ts';
 export type { AssistDuplicate } from './assist-duplicate.ts';
 export { assistItemFacts } from './assist-item-facts.ts';
 export type { AssistAsked } from './assist-item-facts.ts';
+export { assistOwnWords } from './assist-own-words.ts';
+export {
+  APPLIABLE_ASSIST_KINDS,
+  assistAppliedWords,
+  assistApplyKinds,
+  assistApplyStep,
+  assistCautionWords,
+  assistNotAppliable,
+  assistNotAppliedYet,
+  assistRowIntegrity,
+  assistStepKeys,
+  assistStepPaths,
+} from './assist-apply.ts';
+export type {
+  AssistApplyKind,
+  AssistApplyStep,
+  AssistFill,
+  AssistNewPerson,
+} from './assist-apply.ts';
+export { assistRecheck } from './assist-recheck.ts';
+export type {
+  AssistApplyAsk,
+  AssistEvidence,
+  AssistNoteNow,
+  AssistReadProperties,
+  AssistRecheck,
+  AssistRecheckInput,
+} from './assist-recheck.ts';
+export { assistActivityReport } from './assist-activity.ts';
+export type { AssistActivity } from './assist-activity.ts';
 export {
   ASSIST_TASKS_QUERY_MARK,
   ASSIST_TITLED_QUERY_MARK,
@@ -92,3 +122,4 @@ export {
   compileTitledNotesQuery,
   takenTitles,
 } from './assist-queries.ts';
+export { assistLinksBrokenByMoveBack } from './assist-links.ts';

@@ -37,6 +37,7 @@ export {
   compileProjectTiesQuery,
   LINK_DIRECTORY_PAGE_SIZE,
   linkDirectoryOf,
+  PERSON_EMAIL_KEY,
 } from './meeting-link-queries.ts';
 export type { LinkDirectory, LinkDirectoryRow } from './meeting-link-queries.ts';
 export { meetingLinkReport } from './meeting-link-report.ts';

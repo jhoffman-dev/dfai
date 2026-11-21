@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
 import { createVaultPath, type VaultPath } from '@dfai/domain';
 import { INBOX_CHOICES_SCOPE, INBOX_SCOPE, type WindowClosingPort } from '@dfai/application';
 import { InboxPage } from '@dfai/ui';
@@ -112,12 +112,17 @@ export function InboxContainer({ wiring, chrome }: PageContainerProps) {
     held: pages.holds.inbox,
     toasts: pane.toasts,
   });
+  const assistApply = useMemo(
+    () => ({ write: inbox.write, activity: pane.activity }),
+    [inbox.write, pane.activity],
+  );
   const assist = useInboxAssist({
     wiring: assistWiring,
     ports: pages.ports,
     clock: localClock,
     items: inbox.contents?.items ?? null,
     vaultKey: pane.vault,
+    apply: assistApply,
   });
   const proposals = useProposals({
     ports: pages.ports,

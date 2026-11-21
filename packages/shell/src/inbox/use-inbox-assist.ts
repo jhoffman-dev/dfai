@@ -4,6 +4,7 @@ import {
   assistPeopleWords,
   assistReason,
   assistStepWords,
+  assistCautionWords,
   assistTone,
   localTimeMs,
   messageWithoutPaths,
@@ -11,15 +12,20 @@ import {
   type InboxItem,
 } from '@dfai/domain';
 import {
+  dismissUnfinishedAssist,
+  findUnfinishedAssist,
   previewInboxAssist,
+  type AssistUnfinished,
+  type ActivityLog,
   type ArchivePorts,
   type ClaudeStepPorts,
   type Clock,
   type InboxAssistOutcome,
   type InboxAssistPorts,
 } from '@dfai/application';
-import type { AssistRowView, AssistView, InboxAssistProps } from '@dfai/ui';
+import type { AssistRowAction, AssistRowView, AssistView, InboxAssistProps } from '@dfai/ui';
 import type { AssistAsks } from './assist-asks-store.ts';
+import { useAssistApply, type AssistPlanned, type InboxWrite } from './use-assist-apply.ts';
 
 export { assistAsks, browserAssistAsks } from './assist-asks-store.ts';
 export type { AssistAsks } from './assist-asks-store.ts';
@@ -30,11 +36,18 @@ export interface InboxAssistWiring {
   readonly asks: AssistAsks;
 }
 
+/** What Suggest shows, before it is said: the preview's plan is kept whole, for Apply to re-check. */
+type Shown =
+  | { readonly kind: 'asking' }
+  | { readonly kind: 'not-now'; readonly message: string }
+  | (Extract<InboxAssistOutcome, { kind: 'plan' }> & AssistPlanned);
+
 /**
  * Suggest on the Inbox (#900): pressed, it asks Claude about the items in
  * view and shows what would be done; dismissed, it is put away. Until it is
  * pressed it does nothing at all, so opening the Inbox does the work it did.
- * Null where Claude is not offered.
+ * Each planned row can then be applied, and undone (#909). Null where Claude
+ * is not offered.
  */
 export function useInboxAssist({
   wiring,
@@ -42,6 +55,7 @@ export function useInboxAssist({
   clock,
   items,
   vaultKey,
+  apply = null,
 }: {
   wiring: InboxAssistWiring | null;
   ports: ArchivePorts;
@@ -50,8 +64,15 @@ export function useInboxAssist({
   items: readonly InboxItem[] | null;
   /** The vault the Inbox is of; its asks are counted under it. */
   vaultKey: string | null;
+  /**
+   * The Inbox's own write queue, which Apply and Undo write through, and the
+   * Activity log each says what it did in (#909); null where they are not offered.
+   */
+  apply?: { write: InboxWrite; activity: Pick<ActivityLog, 'inOpenVault'> } | null;
 }): InboxAssistProps | null {
-  const [view, setView] = useState<AssistView | null>(null);
+  const [shown, setView] = useState<Shown | null>(null);
+  // Rows an earlier apply left unfinished (#911), read at each press: said, never repaired.
+  const [unfinished, setUnfinished] = useState<readonly AssistUnfinished[]>(NO_UNFINISHED);
   // Each press, and each dismissal, is a generation: an answer for an earlier one is not shown.
   const generation = useRef(0);
   // What a press reads, as it is at the press: Suggest's button keeps one handler, so the
@@ -60,24 +81,31 @@ export function useInboxAssist({
   latest.current = { wiring, ports, clock, items, vaultKey };
   // The ask in flight, if any: Dismiss aborts it (it still counts), and a press meanwhile does nothing.
   const inFlight = useRef<AbortController | null>(null);
+  const writingNow = useRef<() => ReadonlySet<string>>(() => NO_WRITING);
   const onSuggest = useCallback(() => {
     const given = latest.current;
-    if (given.wiring === null || inFlight.current !== null) return;
+    // Held while rows are written (#911): their open rows are not news of a crash.
+    if (given.wiring === null || inFlight.current !== null || writingNow.current().size > 0) return;
     const controller = new AbortController();
     inFlight.current = controller;
     const mine = ++generation.current;
-    const show = (shown: AssistView) => {
+    const show = (next: Shown) => {
       if (inFlight.current === controller) inFlight.current = null;
-      if (generation.current === mine) setView(shown);
+      if (generation.current === mine) setView(next);
     };
     setView({ kind: 'asking' });
+    findUnfinishedAssist({ fs: given.ports.fs }, writingNow.current()).then(
+      (found) => generation.current === mine && setUnfinished(found),
+      // A log that cannot be read says nothing left unfinished; the apply itself refuses to write without it.
+      () => generation.current === mine && setUnfinished(NO_UNFINISHED),
+    );
     const claim = claimAsk(given.wiring.asks, given.vaultKey ?? '', given.clock);
     previewInboxAssist(
       { ...assistPorts(given.wiring, given.ports, given.clock), recordAsk: claim.sent },
       { items: given.items ?? [], previewed: claim.before, signal: controller.signal },
     )
       .then(
-        (outcome) => show(viewOf(outcome)),
+        (outcome) => show(outcome),
         (error: unknown) =>
           show({
             kind: 'not-now',
@@ -86,15 +114,35 @@ export function useInboxAssist({
       )
       .finally(claim.settle);
   }, []);
+  const planned = shown?.kind === 'plan' ? shown : null;
+  const applying = useAssistApply({ planned, apply, clock });
+  writingNow.current = applying.writing;
+  const { stop } = applying;
   const onDismiss = useCallback(() => {
     generation.current += 1;
     inFlight.current?.abort();
     inFlight.current = null;
+    // Apply all finishes the row it is on, and starts no other.
+    stop();
     setView(null);
+    setUnfinished(NO_UNFINISHED);
+  }, [stop]);
+  // Put aside by hand (#911): only the log is written; the notes stay as they are.
+  const onPutAside = useCallback((row: string) => {
+    const given = latest.current;
+    void dismissUnfinishedAssist({ fs: given.ports.fs, clock: given.clock }, row).then(
+      () => setUnfinished((before) => before.filter((each) => each.row !== row)),
+      // Not written: the row stays listed, so the person can try again.
+      () => undefined,
+    );
   }, []);
+  const view = useMemo(() => (shown === null ? null : viewOf(shown, applying)), [shown, applying]);
   return useMemo(
-    () => (wiring === null ? null : { view, onSuggest, onDismiss }),
-    [wiring, view, onSuggest, onDismiss],
+    () =>
+      wiring === null
+        ? null
+        : { view, onSuggest, onDismiss, actions: applying.actions, unfinished, onPutAside },
+    [wiring, view, onSuggest, onDismiss, applying.actions, unfinished, onPutAside],
   );
 }
 
@@ -144,17 +192,21 @@ function assistPorts(
   };
 }
 
-function viewOf(outcome: InboxAssistOutcome): AssistView {
-  if (outcome.kind === 'not-now') return { kind: 'not-now', message: outcome.message };
+function viewOf(shown: Shown, applying: ReturnType<typeof useAssistApply>): AssistView {
+  if (shown.kind !== 'plan') return shown;
   return {
     kind: 'plan',
-    summary: outcome.summary,
-    rows: outcome.rows.map(rowView),
-    more: assistMoreWords(outcome.notConsidered),
+    summary: shown.summary,
+    rows: shown.rows.map((row) => rowView(row, applying.actionOf(row))),
+    more: assistMoreWords(shown.notConsidered),
+    canApplyAll: applying.actions !== null && applying.canApplyAll,
+    canUndoAll: applying.actions !== null && applying.canUndoAll,
+    busy: applying.busy,
+    said: applying.said,
   };
 }
 
-function rowView(row: AssistRow): AssistRowView {
+function rowView(row: AssistRow, action: AssistRowAction): AssistRowView {
   return {
     path: row.path,
     title: row.title,
@@ -162,5 +214,10 @@ function rowView(row: AssistRow): AssistRowView {
     why: assistReason(row),
     tone: assistTone(row.step),
     people: assistPeopleWords(row),
+    action,
+    caution: assistCautionWords(row),
   };
 }
+
+const NO_UNFINISHED: readonly AssistUnfinished[] = [];
+const NO_WRITING: ReadonlySet<string> = new Set();

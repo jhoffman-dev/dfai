@@ -139,13 +139,19 @@ export function automationVault({
       }
       log.push(`move ${move.from} -> ${move.to}`);
     },
-    trashEntry: async ({ path: at }) => {
+    trashEntry: async ({ path: at, unchanged = [] }) => {
+      // As the host: refused when a note it was held to says anything else now.
+      if (unchanged.some((held) => files.get(held.path) !== held.text)) {
+        throw new VaultAccessError('the note changed on disk');
+      }
       if (!files.delete(at)) throw new VaultAccessError('no such entry');
       modified.delete(at);
       log.push(`trash ${at}`);
     },
-    writeTextFile: async ({ path: at, contents, expectedModified }) => {
-      if (expectedModified !== null && modified.get(at) !== expectedModified) {
+    writeTextFile: async ({ path: at, contents, expectedModified, expectedText }) => {
+      // As the host: held to the text too, which catches an edit within the same timestamp tick.
+      const changed = expectedText !== undefined && files.get(at) !== expectedText;
+      if (changed || (expectedModified !== null && modified.get(at) !== expectedModified)) {
         throw new VaultAccessError('the note changed on disk');
       }
       files.set(at, contents);

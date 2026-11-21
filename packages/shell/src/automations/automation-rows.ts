@@ -135,6 +135,10 @@ function doneLine(action: DoneAction): LogLineView {
       return { kind: 'done', text: `Archived ${noteTitle(action.from)} (${action.from})` };
     case 'unarchived':
       return { kind: 'done', text: `Put back ${noteTitle(action.to)} (${action.to})` };
+    case 'assisted':
+      return { kind: 'done', text: `Changed ${noteTitle(action.from)} (${action.to})` };
+    case 'unassisted':
+      return { kind: 'done', text: `Took back ${noteTitle(action.to)} (${action.to})` };
     case 'set':
     case 'restored': {
       const verb = action.kind === 'set' ? 'Set' : 'Restored';

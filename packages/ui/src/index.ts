@@ -289,7 +289,13 @@ export type {
 } from './inbox-page.tsx';
 export type { InboxOfferReading } from './inbox-offer.ts';
 export type { InboxRefusal } from './inbox/inbox-rows.tsx';
-export type { AssistRowView, AssistView } from './inbox/assist-summary.tsx';
+export type {
+  AssistActions,
+  AssistRowAction,
+  AssistRowView,
+  AssistUnfinishedView,
+  AssistView,
+} from './inbox/assist-summary.tsx';
 export type { ClarifyInboxItem } from './inbox/use-inbox-triage.ts';
 export { WeeklyReviewPage } from './weekly-review-page.tsx';
 export type { WeeklyReviewPageProps } from './weekly-review-page.tsx';

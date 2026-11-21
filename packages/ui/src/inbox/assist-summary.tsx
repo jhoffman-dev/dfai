@@ -1,20 +1,9 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 import { Icon } from '../icon.tsx';
 import { noticeBarClass } from '../notice-bar.ts';
+import { AssistRow, type AssistRowActions, type AssistRowView } from './assist-row.tsx';
 
-/** One item's row, said already: the page decides nothing about it. */
-export interface AssistRowView {
-  readonly path: string;
-  readonly title: string;
-  /** What would be done, in DFAI's words. */
-  readonly does: string;
-  /** One short reason. */
-  readonly why: string;
-  /** How its chip is drawn: filed, a duplicate, a question, or left. */
-  readonly tone: 'file' | 'duplicate' | 'ask' | 'leave';
-  /** What would be done about the people it names, a line each: "Links Mara Quill". */
-  readonly people: readonly string[];
-}
+export type { AssistRowAction, AssistRowView } from './assist-row.tsx';
 
 /** What Suggest has to show (#900), once it was pressed. */
 export type AssistView =
@@ -25,36 +14,55 @@ export type AssistView =
       readonly rows: readonly AssistRowView[];
       /** A line about the items not looked at, or null. */
       readonly more: string | null;
+      /** Whether any row can be applied: "Apply all sure ones" is offered. False when left out. */
+      readonly canApplyAll?: boolean;
+      /** Whether any row is applied and can be taken back: "Undo all" is offered. False when left out. */
+      readonly canUndoAll?: boolean;
+      /** True while rows are being applied or undone: the bar's buttons wait. */
+      readonly busy?: boolean;
+      /** What the last apply or undo did, said for a screen reader as it lands. */
+      readonly said?: string;
     }
   | { readonly kind: 'not-now'; readonly message: string };
+
+/** What the panel's buttons do (#909); left out where nothing can be applied. */
+export interface AssistActions extends AssistRowActions {
+  readonly onApplyAll: () => void;
+  readonly onUndoAll: () => void;
+}
+
+/** A row a crash left unfinished (#911), said already: what it was to do and what is on disk. */
+export interface AssistUnfinishedView {
+  /** The row, as the log names it: what putting it aside names. */
+  readonly row: string;
+  readonly title: string;
+  readonly lines: readonly string[];
+}
 
 export interface AssistSummaryProps {
   readonly view: AssistView;
   readonly onDismiss: () => void;
+  readonly actions?: AssistActions | null;
+  /** Rows an earlier apply left unfinished, to be put right by hand; none when left out. */
+  readonly unfinished?: readonly AssistUnfinishedView[];
+  /** Puts one aside once the person has put it right (#911); not offered when left out. */
+  readonly onPutAside?: (row: string) => void;
 }
-
-/** A chip's pastel, from the statuses' own: neutral chrome round it. */
-const TONE_PILL: Readonly<Record<AssistRowView['tone'], string>> = {
-  file: 'next',
-  duplicate: 'review',
-  ask: 'waiting',
-  leave: 'backlog',
-};
-
-const TONE_WORD: Readonly<Record<AssistRowView['tone'], string>> = {
-  file: 'Would act',
-  duplicate: 'Duplicate',
-  ask: 'Question',
-  leave: 'Would leave',
-};
 
 /**
  * What Inbox assist would do (#900): the sentence that sums it up, then each
- * item with what would be done and why. Nothing here writes; Dismiss, or
- * Escape anywhere in it, puts it away. It takes the focus as it opens, on its
+ * item with what would be done and why. Nothing is written until a row's
+ * Apply, or "Apply all sure ones", is pressed (#909); each applied row has
+ * Undo, and the panel "Undo all". Dismiss, or Escape anywhere in it, puts it away. It takes the focus as it opens, on its
  * heading, so the keyboard follows Suggest to what it shows (#903).
  */
-export function AssistSummary({ view, onDismiss }: AssistSummaryProps) {
+export function AssistSummary({
+  view,
+  onDismiss,
+  actions = null,
+  unfinished = [],
+  onPutAside,
+}: AssistSummaryProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -75,7 +83,12 @@ export function AssistSummary({ view, onDismiss }: AssistSummaryProps) {
         <h3 className="inbox-assist__heading" tabIndex={-1} ref={heading}>
           Suggestions
         </h3>
-        <AssistBody view={view} />
+        {unfinished.length > 0 && <Unfinished rows={unfinished} onPutAside={onPutAside} />}
+        <AssistBody view={view} actions={actions} />
+        {/* There before any row is, so that rows left unfinished are announced as they appear. */}
+        <p className="visually-hidden" aria-live="polite" data-live="unfinished">
+          {unfinishedSaid(unfinished.length)}
+        </p>
       </div>
       <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>
         Dismiss
@@ -84,39 +97,140 @@ export function AssistSummary({ view, onDismiss }: AssistSummaryProps) {
   );
 }
 
-function AssistBody({ view }: { view: AssistView }) {
-  if (view.kind === 'asking') return <p role="status">Asking Claude… nothing is written.</p>;
-  if (view.kind === 'not-now') return <p role="status">{view.message}</p>;
-  return <AssistPlan {...view} />;
+/** What an apply a crash cut short left, row by row, for the person to put right: nothing here repairs it. */
+const unfinishedSaid = (count: number) =>
+  count === 0
+    ? ''
+    : `${count} ${count === 1 ? 'row' : 'rows'} left unfinished by an earlier apply or undo.`;
+
+function Unfinished({
+  rows,
+  onPutAside,
+}: {
+  rows: readonly AssistUnfinishedView[];
+  onPutAside: ((row: string) => void) | undefined;
+}) {
+  const id = useId();
+  return (
+    <section className="inbox-assist__unfinished" aria-labelledby={id}>
+      <p id={id}>
+        <strong>Left unfinished</strong>{' '}
+        <span className="inbox-assist__note">
+          An earlier apply or undo stopped part-way. Nothing was put right.
+        </span>
+      </p>
+      {onPutAside !== undefined && (
+        <p className="inbox-assist__note">
+          Put aside changes no note: it only stops showing that row here.
+        </p>
+      )}
+      <ul className="inbox-assist__rows">
+        {rows.map((row) => (
+          <li
+            key={row.row}
+            className="inbox-assist__row"
+            aria-label={`${row.title}, left unfinished`}
+          >
+            <span className="inbox-assist__title">{row.title}</span>
+            <span className="inbox-assist__left">
+              {row.lines.map((line) => (
+                <span key={line} className="inbox-assist__said">
+                  {line}
+                </span>
+              ))}
+            </span>
+            {onPutAside !== undefined && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                aria-label={`Put aside ${row.title}`}
+                onClick={() => onPutAside(row.row)}
+              >
+                Put aside
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
-function AssistPlan({ summary, rows, more }: Extract<AssistView, { kind: 'plan' }>) {
+function AssistBody({ view, actions }: { view: AssistView; actions: AssistActions | null }) {
+  if (view.kind === 'asking') return <p role="status">Asking Claude… nothing is written.</p>;
+  if (view.kind === 'not-now') return <p role="status">{view.message}</p>;
+  return <AssistPlan view={view} actions={actions} />;
+}
+
+function AssistPlan({
+  view,
+  actions,
+}: {
+  view: Extract<AssistView, { kind: 'plan' }>;
+  actions: AssistActions | null;
+}) {
   const id = useId();
+  const { summary, rows, more } = view;
   return (
     <>
       <p role="status" id={id}>
-        <strong>{summary}</strong> <span className="inbox-assist__note">Nothing is written.</span>
+        <strong>{summary}</strong>{' '}
+        <span className="inbox-assist__note">Nothing is written until you apply it.</span>
       </p>
       {rows.length > 0 && (
         <ul className="inbox-assist__rows" aria-labelledby={id}>
           {rows.map((row) => (
-            <li key={row.path} className="inbox-assist__row" aria-label={row.title}>
-              <span className="inbox-assist__title">{row.title}</span>
-              <span className="status-pill" data-tone={TONE_PILL[row.tone]}>
-                {TONE_WORD[row.tone]}
-              </span>
-              <span className="inbox-assist__does">{row.does}</span>
-              {row.people.map((line) => (
-                <span key={line} className="inbox-assist__person">
-                  {line}
-                </span>
-              ))}
-              {row.why !== '' && <small className="inbox-assist__why">{row.why}</small>}
-            </li>
+            <AssistRow key={row.path} row={row} actions={actions} />
           ))}
         </ul>
       )}
       {more !== null && <p className="inbox-assist__note">{more}</p>}
+      {actions !== null && <AllButtons view={view} actions={actions} />}
+      <p className="visually-hidden" aria-live="polite">
+        {view.said ?? ''}
+      </p>
     </>
+  );
+}
+
+/**
+ * "Apply all sure ones" and "Undo all": held, not taken away, while rows are
+ * written, so the focus stays on the one pressed and a second press does nothing.
+ */
+function AllButtons({
+  view,
+  actions,
+}: {
+  view: Extract<AssistView, { kind: 'plan' }>;
+  actions: AssistActions;
+}) {
+  if (view.canApplyAll !== true && view.canUndoAll !== true) return null;
+  const busy = view.busy === true;
+  const unlessBusy = (act: () => void) => () => {
+    if (!busy) act();
+  };
+  return (
+    <div className="inbox-assist__all">
+      {view.canApplyAll === true && (
+        <button
+          type="button"
+          className="btn btn--sm"
+          aria-disabled={busy}
+          onClick={unlessBusy(actions.onApplyAll)}
+        >
+          Apply all sure ones
+        </button>
+      )}
+      {view.canUndoAll === true && (
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          aria-disabled={busy}
+          onClick={unlessBusy(actions.onUndoAll)}
+        >
+          Undo all
+        </button>
+      )}
+    </div>
   );
 }
