@@ -310,6 +310,22 @@ describe('the properties panel', () => {
     expect(onChange).toHaveBeenLastCalledWith('priority', 3);
   });
 
+  it('picks over a list of the note’s own too, shown as "Other: [1,2]", with no alert', () => {
+    panel([1, 2]);
+    const field = screen.getByLabelText('Priority') as HTMLSelectElement;
+    expect(field.tagName).toBe('SELECT');
+    expect(field.selectedOptions[0]?.text).toBe('Other: [1,2]');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows P3 for a task holding 3, with no alert', () => {
+    panel(3);
+    expect((screen.getByLabelText('Priority') as HTMLSelectElement).selectedOptions[0]?.text).toBe(
+      'P3',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('cuts a long value of the note’s own short in "Other: …"', () => {
     panel('x'.repeat(60));
     const field = screen.getByLabelText('Priority') as HTMLSelectElement;

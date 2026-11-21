@@ -23,16 +23,22 @@ const note = (properties: Record<string, unknown>): OpenNote =>
 
 const index = fakeIndexPort();
 
-function editorOf(types: readonly ObjectType[], properties: Record<string, unknown>) {
+function rowsOf(types: readonly ObjectType[], properties: Record<string, unknown>) {
   // Made once, not on every render: a new note each render would read it again without end.
   const open = note(properties);
   const { result, unmount } = renderHook(() =>
     useNoteProperties({ note: open, types, index, links }),
   );
-  const editor = result.current.rows.find((row) => row.def.key === 'priority')?.editor;
+  const rows = result.current.rows;
   unmount();
-  return editor;
+  return rows;
 }
+
+const rowOf = (types: readonly ObjectType[], properties: Record<string, unknown>, key: string) =>
+  rowsOf(types, properties).find((row) => row.def.key === key);
+
+const editorOf = (types: readonly ObjectType[], properties: Record<string, unknown>) =>
+  rowOf(types, properties, 'priority')?.editor;
 
 const task = (priority: unknown) =>
   parseObjectType({ name: 'task', properties: priority === undefined ? {} : { priority } });
@@ -59,5 +65,26 @@ describe('useNoteProperties: a task’s priority row', () => {
   it('is edited as its kind on a note that is not a task', () => {
     const goal = parseObjectType({ name: 'goal', properties: { priority: 'number' } });
     expect(editorOf([goal], { type: 'goal', priority: 7 })).toBeUndefined();
+  });
+});
+
+describe('useNoteProperties: a task’s priority row is never called invalid (#917 review)', () => {
+  const NUMBERED = parseObjectType({
+    name: 'task',
+    properties: { priority: 'number', estimate: 'number' },
+  });
+
+  it('picks a value of the note’s own, with no alert: a soft field allows it', () => {
+    for (const priority of ['high', 7, '2', [1, 2], 3]) {
+      const row = rowOf([NUMBERED], { type: 'task', priority }, 'priority');
+      expect(row?.editor).toBe('priority');
+      expect(row?.error).toBeNull();
+    }
+  });
+
+  it('still calls an ordinary number property on the same note invalid when it holds words', () => {
+    const row = rowOf([NUMBERED], { type: 'task', priority: 'high', estimate: 'soon' }, 'estimate');
+    expect(row?.editor).toBeUndefined();
+    expect(row?.error).not.toBeNull();
   });
 });
