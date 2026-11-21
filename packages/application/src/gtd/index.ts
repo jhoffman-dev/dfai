@@ -22,4 +22,9 @@ export type {
   TaskMigrationReport,
   TaskMigrationUndo,
 } from './run-task-migration.ts';
-export { newNoteTaskRules, TaskRuleRefusedError, withTaskRules } from './task-rules.ts';
+export {
+  newNoteTaskRules,
+  TaskRuleRefusedError,
+  withTaskPriority,
+  withTaskRules,
+} from './task-rules.ts';

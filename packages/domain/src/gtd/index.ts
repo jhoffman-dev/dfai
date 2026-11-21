@@ -44,11 +44,13 @@ export {
 export type { StatusMapping, TaskStatusMove } from './status-mapping.ts';
 export { automationStatusRewrite, rewrittenQuery, viewStatusRewrite } from './status-references.ts';
 export type { StatusesInUse, StatusRewrite } from './status-references.ts';
-export { isTaskNote, TASK_RULE_KEYS, taskRuleChanges } from './task-rules.ts';
+export { isTaskNote, TASK_RULE_KEYS, taskPriorityChanges, taskRuleChanges } from './task-rules.ts';
 export {
-  comparePriority,
   isTaskPriority,
+  isTaskPriorityField,
+  keepsTaskPriority,
   PRIORITY_PROPERTY,
+  PRIORITY_REFUSAL,
   priorityChange,
   priorityLabel,
   priorityName,
@@ -71,6 +73,7 @@ export {
   clarifyVocabulary,
   followsGtd,
   GTD_STATUS_PROPERTY,
+  ranksTasks,
   tasksStartInInbox,
   taskTypeOf,
   TASK_TYPE_FILE,

@@ -72,7 +72,8 @@ export interface InboxTask {
   readonly due: string | null;
   /**
    * How urgent it is, 1 to 4 (#913); null for none, or for a value that is
-   * not one. Absent where a caller built the task by hand, which is none.
+   * not one. Absent where the vault does not rank its tasks 1 to 4 (`ranksTasks`)
+   * or the read did not say: then its row shows and offers no priority.
    */
   readonly priority?: TaskPriority | null;
 }
@@ -455,7 +456,8 @@ function inboxTask(row: {
     waitingOnNames: waitingOnNames(row.waitingOnNames),
     defer: textOrNull(row.defer),
     due: textOrNull(row.due),
-    priority: taskPriorityOf(row.priority),
+    // Absent where the vault does not rank its tasks 1 to 4: its row offers no priority.
+    ...(Object.hasOwn(row, 'priority') && { priority: taskPriorityOf(row.priority) }),
   };
 }
 

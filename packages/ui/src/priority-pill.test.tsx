@@ -114,7 +114,7 @@ describe('Today', () => {
   });
 });
 
-const inboxTask = (priority: TaskPriority | null): InboxItem => ({
+const inboxTask = (priority: TaskPriority | null | undefined): InboxItem => ({
   path: createVaultPath('Inbox/Call Mara Quill.md'),
   title: 'Call Mara Quill',
   type: 'task',
@@ -128,7 +128,7 @@ const inboxTask = (priority: TaskPriority | null): InboxItem => ({
     waitingOnNames: '',
     defer: null,
     due: null,
-    priority,
+    ...(priority !== undefined && { priority }),
   },
 });
 
@@ -182,6 +182,12 @@ describe('the Inbox', () => {
     expect(onClarify).toHaveBeenCalledWith(
       expect.objectContaining({ clarification: { priority: null } }),
     );
+  });
+
+  it('offers no priority where the vault keeps one of its own, which its read leaves out', () => {
+    inbox(inboxTask(undefined));
+    expect(screen.getByRole('combobox', { name: 'Status of Call Mara Quill' })).toBeDefined();
+    expect(screen.queryByRole('combobox', { name: 'Priority of Call Mara Quill' })).toBeNull();
   });
 
   it('asks nothing of a priority left as it was', () => {
@@ -252,6 +258,7 @@ describe('a task table', () => {
       labels: { priority: 'Priority' },
       noun: 'task',
       properties: { priority: PRIORITY },
+      ranksPriority: true,
     };
     const result: TableResult = {
       columns: ['path', 'title', 'priority'],
@@ -278,5 +285,30 @@ describe('a task table', () => {
       within(rowOf('Call the bank')).getByRole('button', { name: 'Priority 1' }),
     ).toBeDefined();
     expect(within(rowOf('Water the plants')).queryByText(ANY_PRIORITY)).toBeNull();
+  });
+
+  it('draws a number where the table’s priority is not a task’s 1 to 4', () => {
+    render(
+      <TableView
+        result={{
+          columns: ['path', 'title', 'priority'],
+          rows: [['g.md', 'Grow the list', 2]],
+          truncated: false,
+          sql: '',
+        }}
+        sorts={[]}
+        error={null}
+        schema={{
+          kinds: { priority: 'number' },
+          labels: { priority: 'Priority' },
+          noun: 'goal',
+          properties: { priority: PRIORITY },
+        }}
+        onOpenNote={() => {}}
+        onToggleSort={() => {}}
+      />,
+    );
+    expect(within(rowOf('Grow the list')).getByText('2')).toBeDefined();
+    expect(within(rowOf('Grow the list')).queryByText(ANY_PRIORITY)).toBeNull();
   });
 });

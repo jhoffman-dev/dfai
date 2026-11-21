@@ -4,7 +4,7 @@ import { declaresFocus, FOCUS_PROPERTY } from '../today/chosen.ts';
 import { FILED_UNDER, type BuiltInTypeFile } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import { statusOf } from '../types/status-property.ts';
-import { PRIORITY_PROPERTY } from './task-priority.ts';
+import { keepsTaskPriority, PRIORITY_PROPERTY } from './task-priority.ts';
 import {
   FINISHED_TASK_STATUS,
   GTD_STATUSES,
@@ -215,12 +215,22 @@ export const tasksStartInInbox = (types: readonly ObjectType[]): boolean =>
 export const choosesForToday = (types: readonly ObjectType[]): boolean =>
   declaresFocus(taskTypeOf(types) ?? TASK_TYPE_FILE.type);
 
+/**
+ * Whether the vault's tasks are ranked 1 to 4 (#913): its Task type keeps
+ * `priority` as a number or not at all (`keepsTaskPriority`). A vault with no
+ * Task type yet is taken to have the built-in one, which does.
+ */
+export const ranksTasks = (types: readonly ObjectType[]): boolean =>
+  keepsTaskPriority(taskTypeOf(types));
+
 /** The statuses a row may give a task, and where a note made a task starts. */
 export interface ClarifyVocabulary {
   /** The GTD statuses the vault's Task type declares, in GTD's order. */
   readonly statuses: readonly GtdStatus[];
   /** The status a note made a task starts in, or null to leave it unset. */
   readonly startsAt: GtdStatus | null;
+  /** Whether a row may give a task a priority, 1 to 4 (`ranksTasks`). */
+  readonly ranks: boolean;
 }
 
 /**
@@ -232,10 +242,10 @@ export interface ClarifyVocabulary {
 export function clarifyVocabulary(types: readonly ObjectType[]): ClarifyVocabulary {
   const type = taskTypeOf(types);
   const status = statusOf(type);
-  if (type === null) return { statuses: GTD_STATUSES, startsAt: NEW_TASK_STATUS };
+  if (type === null) return { statuses: GTD_STATUSES, startsAt: NEW_TASK_STATUS, ranks: true };
   const declared =
     status?.key === TASK_KEYS.status
       ? GTD_STATUSES.filter((each) => status.options.includes(each))
       : [];
-  return { statuses: declared, startsAt: capturedTaskStatus(type) };
+  return { statuses: declared, startsAt: capturedTaskStatus(type), ranks: keepsTaskPriority(type) };
 }

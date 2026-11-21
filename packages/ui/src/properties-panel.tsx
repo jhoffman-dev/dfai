@@ -10,8 +10,8 @@ import {
   linkedNotes,
   optionColor,
   optionLabel,
+  isTaskPriorityField,
   propertyIcon,
-  propertyRole,
   relationHue,
   relationTypes,
   relationTypesText,
@@ -153,6 +153,7 @@ export function PropertiesPanel({
                   <PropertyEditor
                     id={`${idPrefix}-${row.def.key}`}
                     row={row}
+                    typeName={typeName}
                     choices={relationChoices[row.def.key] ?? []}
                     onChange={(value) => onChange(row.def.key, value)}
                     {...(onOpenNote !== undefined && { onOpenNote })}
@@ -238,6 +239,7 @@ interface EditorProps {
 function PropertyEditor({
   id,
   row,
+  typeName,
   choices,
   onChange,
   onOpenNote,
@@ -245,6 +247,8 @@ function PropertyEditor({
 }: {
   id: string;
   row: PropertyRow;
+  /** The note's type, which says whether its `priority` is a task's 1 to 4 (#913). */
+  typeName: string | null;
   choices: readonly RelationChoice[];
   onChange: (value: unknown) => void;
   onOpenNote?: (path: VaultPath) => void;
@@ -267,7 +271,7 @@ function PropertyEditor({
       return <CheckboxEditor {...props} />;
     case 'number':
       // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
-      if (propertyRole(row.def.key) === 'priority') return <PriorityEditor {...props} />;
+      if (isTaskPriorityField({ typeName, def: row.def })) return <PriorityEditor {...props} />;
       return <NumberEditor {...props} />;
     case 'date':
       return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;

@@ -268,9 +268,10 @@ function ordering(query: ViewQuery, shape: QueryShape): string[] {
   if (shape.aggregate !== undefined) return [];
 
   return [
-    // Blank last either way, as a query's sort and a SQL result's put it: an
-    // empty cell is not the smallest value, only a missing one — a task with
-    // no priority comes after P4, not before P1 (#913).
+    // Blank last either way, as the query language's sort puts it (plain
+    // SQLite puts NULL first ascending): an empty cell is not the smallest
+    // value, only a missing one — a task with no priority comes after P4,
+    // not before P1 (#913).
     ...query.sorts.map(
       (sort) =>
         `NULLIF(${identifier(sort.key, 'sort column')}, '') ${sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`,

@@ -1,4 +1,11 @@
-import { splitFrontmatter, TASK_RULE_KEYS, taskRuleChanges } from '@dfai/domain';
+import {
+  ranksTasks,
+  splitFrontmatter,
+  TASK_RULE_KEYS,
+  taskPriorityChanges,
+  taskRuleChanges,
+  type ObjectType,
+} from '@dfai/domain';
 import type { MarkdownPort } from '../notes/ports.ts';
 import type { PropertyChanges } from '../query/set-property.ts';
 
@@ -31,6 +38,28 @@ export function withTaskRules({
     if ('refused' in outcome) throw new TaskRuleRefusedError(outcome.refused);
     return outcome.changes;
   };
+}
+
+/**
+ * A change held to the 1-to-4 priority (#913), by a caller that holds the
+ * vault's types and the note as it is: only where the vault ranks its tasks
+ * (`ranksTasks`), only on a task, and only when the change names `priority`.
+ * A value that is not one is refused with {@link TaskRuleRefusedError}; the
+ * digit as text is written as the number. Anything else passes as it is.
+ */
+export function withTaskPriority({
+  types,
+  before,
+  changes,
+}: {
+  types: readonly ObjectType[];
+  before: Readonly<Record<string, unknown>>;
+  changes: Readonly<Record<string, unknown>>;
+}): Readonly<Record<string, unknown>> {
+  if (!ranksTasks(types)) return changes;
+  const outcome = taskPriorityChanges(before, changes);
+  if ('refused' in outcome) throw new TaskRuleRefusedError(outcome.refused);
+  return outcome.changes;
 }
 
 /**

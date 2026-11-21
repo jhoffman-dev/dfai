@@ -35,6 +35,20 @@ function typeAware(): MarkdownPort {
   };
 }
 
+const OWN_PRIORITY_TYPE = '---\nname: task\nproperties:\n  priority: select\n---\n';
+
+/** `key: value` lines for notes, and a Task type whose `priority` is a select of its own. */
+function withOwnPriority(): MarkdownPort {
+  const markdown = fakeMarkdown();
+  return {
+    ...markdown,
+    frontmatterProperties: (frontmatter) =>
+      frontmatter?.includes('name: task')
+        ? { name: 'task', properties: { priority: { kind: 'select', options: ['high', 'low'] } } }
+        : markdown.frontmatterProperties(frontmatter),
+  };
+}
+
 const vault = (type: string, files: Record<string, string> = {}) =>
   apiFixture({
     markdown: typeAware(),
@@ -81,6 +95,15 @@ describe('PATCH /v1/notes/{path}/properties on a task', () => {
     expect(response.status).toBe(400);
     expect(bodyOf(response)).toMatchObject({ error: { code: 'invalid' } });
     expect(api.files.get('Call.md')?.text).toBe(TASK);
+  });
+
+  it('writes a priority of the vault’s own as given, where its Task type keeps priority as a select (#917 review)', async () => {
+    const own = apiFixture({
+      markdown: withOwnPriority(),
+      files: { '.atlas/types/task.md': OWN_PRIORITY_TYPE, 'Call.md': TASK },
+    });
+    expect((await patch(own, { priority: 'high' })).status).toBe(200);
+    expect(own.files.get('Call.md')?.text).toContain('\npriority: high\n');
   });
 
   it('accepts Waiting with nobody to wait on, writing the status alone (#202)', async () => {

@@ -119,6 +119,26 @@ describe('readToday', () => {
     expect(titles(report, 'dueToday')).toEqual([]);
   });
 
+  it('carries a task’s priority only where the vault ranks its tasks 1 to 4 (#913)', async () => {
+    const files = {
+      ...FILES,
+      'Tasks/Call the bank.md': task('status: next-action', 'priority: 2'),
+    };
+    const priorityOf = async (ranking: boolean) => {
+      const report = await readToday({
+        index: fakeIndexPort({ query: atlasQueryIndex({ markdown: fakeMarkdown(), files }) }),
+        ...NO_PROPOSALS,
+        clock: CLOCK,
+        choosing: true,
+        ranking,
+      });
+      const tasks = report.sections.flatMap((section) => section.groups.flatMap((g) => g.tasks));
+      return tasks.find((each) => each.title === 'Call the bank');
+    };
+    expect(await priorityOf(true)).toMatchObject({ priority: 2 });
+    expect(await priorityOf(false)).not.toHaveProperty('priority');
+  });
+
   it('reads every task in one statement, whatever the sections', async () => {
     const statements: string[] = [];
     const query = atlasQueryIndex({ markdown: fakeMarkdown(), files: FILES });

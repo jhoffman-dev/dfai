@@ -268,7 +268,7 @@ what needs attention but had nowhere to say what was chosen.
   the app's clock, through the same write as a property change; MCP's
   `atlas_choose_for_today` calls it.
 
-## Addendum (#913, 2026-11-18): a task's priority
+## Addendum (#913, 2026-11-18; amended 2026-11-21 in review): a task's priority
 
 Slice 1 of the Todoist sync (#912). James: "Priority should be added."
 
@@ -277,30 +277,54 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
   key left out, never a fifth value, so a note that never had one is
   unchanged, and one given a priority and then cleared is back byte for byte
   (ADR-0003).
-- **It is a task rule.** A change that names `priority` on a task is held to
-  1 to 4 from whichever write makes it: the properties panel, a table cell,
-  Clarify, the API's property route. The digit written as text (`"2"`, as a
-  typed field hands it over) is written as the number, a blank takes the key
-  out, and anything else (`0`, `5`, `2.5`, `high`) is refused with
-  `TaskRuleRefusedError`. A change that does not name `priority` is not judged
-  by it, so a note already holding a value of its own can still be edited
-  otherwise. A note that is not a task is not judged at all.
+- **It adds a field; it takes nothing away.** A vault may already write
+  `priority` its own way (`high`, `"A"`, `7`, a select of High to Low).
+  Nothing that worked before fails or is rewritten:
+  - Making a note never judges a `priority` it is handed. A template, a
+    capture, quick add, `POST /v1/notes` or a proposal writes it as given,
+    `"2"` included.
+  - The 1-to-4 rule, the pill and the P1–P4 picker apply only where the
+    vault's Task type keeps `priority` as a number, or does not declare it
+    at all (`keepsTaskPriority`; a vault with no Task type is taken to have
+    the built-in one). A Task type that declares it as another kind keeps
+    its own: no rule, no pill, no picker; it is edited as that kind.
+  - The picker and the pill are a task's: `priority` declared a number on
+    the Task type (`isTaskPriorityField`). A goal's own number `priority`
+    stays a number field.
+- **Where the rule is held.** A change that names `priority` on a task is
+  held to 1 to 4 by a caller that holds the vault's types: Clarify (through
+  its vocabulary, `ClarifyVocabulary.ranks`) and the API's property route
+  (`withTaskPriority`, beside its relation-type check). There `"2"` is written
+  as `2`, a blank takes the key out, and anything else is refused with
+  `TaskRuleRefusedError`. The one write underneath every edit
+  (`setNoteProperties`) is not told the vault's types and writes a
+  `priority` as given, as it did before. The properties panel's picker
+  offers only none and 1 to 4.
 - **It is shown as a pill, P1 to P4, and drawn not at all for none**: on
-  Today's rows, the Inbox's, and a task table's `priority` column; named
-  "Priority 1" for a screen reader, so its hue (red, orange, blue, gray) is
-  never the only signal. It is picked, none or P1 to P4, in the properties
-  panel and on an Inbox row's Clarify.
+  Today's rows, the Inbox's, and a task table's `priority` column. It reads
+  "Priority 1" to a screen reader, so its hue (red, orange, blue, gray) is
+  never the only signal.
 - **Sorting puts P1 first and none last.** A view's sort now puts blanks last
-  in either direction, as a query's sort and a SQL result's already did; a
-  type table sorted ascending used to list empty cells first.
+  in either direction, as the query language's sort already did. Plain
+  SQLite, which a type table's sort used, puts NULL first ascending. So every
+  type table sorted ascending now lists its empty cells last, not first.
+  Descending is unchanged.
 - **The built-in Task type declares it**, after GTD's keys, so a new vault
   has it. It is not one of GTD's keys, so a vault already on GTD is not
-  offered the move again for it. Whether a vault's own Task type, written
-  before it shipped, gains it on opening (as `focus` did, #162) is held for
-  James: that writes into a type file the vault already has.
+  offered the move again for it.
+- **Existing vaults: James's decision.** There are three options:
+  - (a) Add it to `SHIPPED_PROPERTIES`, so an existing vault's Task type
+    gains it on opening, as `focus` did (#162). That writes once per vault,
+    never over a key the type has, and never again once the person takes it
+    off; two Macs' records merge. It does write into saved type files.
+  - (b) Leave it as it is. An existing vault gets the pill, Clarify's picker
+    and the rule, but no properties-panel row or table column until the
+    person adds a Number `priority` in Edit type.
+  - (c) Offer it, and add it only on a yes.
+    This slice does (b).
 - **The mapping to an outside tool is that tool's sync's.** Todoist's API
   numbers priority the other way round (4 is the most urgent); turning one
   into the other belongs to the Todoist sync (#912), not to the vault.
-- **The API's shapes are not changed here**: the property route already sets
-  and clears it, held to the rule; its typed answers (Today, the review, the
-  Inbox) gain it with the API's slice of #912.
+- **The API's shapes are not changed here.** The property route sets and
+  clears it, held as above. Its typed answers (Today, the review, the Inbox)
+  gain it with the API's slice of #912.

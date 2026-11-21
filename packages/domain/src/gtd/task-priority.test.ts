@@ -2,23 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { seededRandom } from '../testing/hostile-text.ts';
 import { TASK_KEYS } from './gtd-status.ts';
 import {
-  comparePriority,
   isTaskPriority,
-  priorityChange,
+  isTaskPriorityField,
+  keepsTaskPriority,
+  PRIORITY_REFUSAL,
   priorityLabel,
   priorityName,
   TASK_PRIORITIES,
   taskPriorityOf,
-  type TaskPriority,
 } from './task-priority.ts';
 import { taskRuleChanges } from './task-rules.ts';
-import { TASK_TYPE_FILE, taskTypeChange } from './task-type.ts';
+import { clarifyVocabulary, ranksTasks, TASK_TYPE_FILE, taskTypeChange } from './task-type.ts';
+import type { ObjectType, PropertyKind } from '../types/property-def.ts';
 
 /** #913: a task's priority, 1 (the most urgent) to 4, or none (ADR-0029's addendum). */
 const TODAY = '2026-11-18';
 const TASK = { type: 'task', status: 'next-action' };
 const rule = (changes: Record<string, unknown>, before: Record<string, unknown> = TASK) =>
-  taskRuleChanges({ before, changes, today: TODAY });
+  taskRuleChanges({ before, changes, today: TODAY, holdsPriority: true });
 
 describe('what a priority is', () => {
   it('is the integer 1, 2, 3 or 4, and nothing else', () => {
@@ -44,27 +45,6 @@ describe('what a priority is', () => {
   });
 });
 
-describe('ordering by priority', () => {
-  it('puts the most urgent first and the tasks with none last', () => {
-    const held: (TaskPriority | null)[] = [null, 3, 1, null, 4, 2, 1];
-    expect([...held].sort(comparePriority)).toEqual([1, 1, 2, 3, 4, null, null]);
-  });
-
-  it('is a total order: antisymmetric and transitive over every pair and triple', () => {
-    const all: (TaskPriority | null)[] = [...TASK_PRIORITIES, null];
-    for (const a of all) {
-      for (const b of all) {
-        expect(Math.sign(comparePriority(a, b)) + Math.sign(comparePriority(b, a))).toBe(0);
-        for (const c of all) {
-          if (comparePriority(a, b) <= 0 && comparePriority(b, c) <= 0) {
-            expect(comparePriority(a, c)).toBeLessThanOrEqual(0);
-          }
-        }
-      }
-    }
-  });
-});
-
 describe('the task rules hold a priority to 1 to 4 (#913)', () => {
   it('writes each of the four as asked', () => {
     for (const priority of TASK_PRIORITIES) {
@@ -84,17 +64,21 @@ describe('the task rules hold a priority to 1 to 4 (#913)', () => {
     }
   });
 
-  it('refuses anything else, saying what a priority may be', () => {
-    for (const bad of [0, 5, 2.5, -1, 'high', 'P1', true, [1, 2], { level: 1 }]) {
-      const outcome = rule({ priority: bad });
-      expect(outcome).toHaveProperty('refused');
-      if ('refused' in outcome) expect(outcome.refused).toMatch(/1 \(the most urgent\) to 4/);
-    }
+  it('refuses anything else, saying what a priority may be without echoing the value', () => {
+    const bad = [0, 5, 2.5, -1, Number.NaN, Infinity, -Infinity, 'high', 'P1', true, [1, 2], {}];
+    for (const value of bad)
+      expect(rule({ priority: value })).toEqual({ refused: PRIORITY_REFUSAL });
+    expect(PRIORITY_REFUSAL).toBe(
+      'A task’s priority is a whole number from 1 (the most urgent) to 4, or none.',
+    );
   });
 
-  it('cuts a long refused value short in what it says back', () => {
-    const outcome = priorityChange('x'.repeat(500));
-    expect('refused' in outcome && outcome.refused.length).toBeLessThan(120);
+  it('writes any value as given where the caller does not hold the change to it', () => {
+    for (const value of ['high', 7, '2', [1, 2]]) {
+      expect(taskRuleChanges({ before: TASK, changes: { priority: value }, today: TODAY })).toEqual(
+        { changes: { priority: value } },
+      );
+    }
   });
 
   it('judges a note made a task by the same change', () => {
@@ -142,5 +126,45 @@ describe('the built-in Task type', () => {
       properties: TASK_TYPE_FILE.type.properties.filter(({ key }) => key !== 'priority'),
     };
     expect(taskTypeChange(withoutPriority)).toBeNull();
+  });
+});
+
+const taskType = (kind?: PropertyKind): ObjectType => ({
+  name: 'task',
+  label: 'Task',
+  properties:
+    kind === undefined
+      ? []
+      : [{ ...TASK_TYPE_FILE.type.properties[0]!, key: 'priority', kind, options: [] }],
+});
+
+describe('a vault whose Task type keeps a priority of its own (#913)', () => {
+  it('ranks its tasks 1 to 4 only when the type keeps priority as a number, or not at all', () => {
+    expect(keepsTaskPriority(null)).toBe(true);
+    expect(keepsTaskPriority(taskType())).toBe(true);
+    expect(keepsTaskPriority(taskType('number'))).toBe(true);
+    for (const kind of ['select', 'text', 'multiSelect', 'date', 'checkbox'] as const) {
+      expect(keepsTaskPriority(taskType(kind))).toBe(false);
+    }
+    expect(ranksTasks([])).toBe(true);
+    expect(ranksTasks([taskType('select')])).toBe(false);
+  });
+
+  it('tells Clarify whether it may give a task a priority', () => {
+    expect(clarifyVocabulary([]).ranks).toBe(true);
+    expect(clarifyVocabulary([taskType('number')]).ranks).toBe(true);
+    expect(clarifyVocabulary([taskType('select')]).ranks).toBe(false);
+  });
+
+  it('is a task’s 1-to-4 field only on the Task type, and only as a number', () => {
+    const number = { key: 'priority', kind: 'number' } as const;
+    expect(isTaskPriorityField({ typeName: 'task', def: number })).toBe(true);
+    expect(isTaskPriorityField({ typeName: ' Task ', def: number })).toBe(true);
+    expect(isTaskPriorityField({ typeName: 'goal', def: number })).toBe(false);
+    expect(isTaskPriorityField({ typeName: null, def: number })).toBe(false);
+    expect(isTaskPriorityField({ typeName: 'task', def: { ...number, kind: 'select' } })).toBe(
+      false,
+    );
+    expect(isTaskPriorityField({ typeName: 'task', def: { ...number, key: 'rank' } })).toBe(false);
   });
 });

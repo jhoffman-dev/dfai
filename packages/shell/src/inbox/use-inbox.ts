@@ -7,6 +7,7 @@ import {
   filingRefusal,
   noteTitle,
   PERSON_TYPE,
+  ranksTasks,
   tasksStartInInbox,
   waitingOnRefusal,
   type Clarification,
@@ -164,6 +165,7 @@ export function useInbox(options: InboxOptions) {
     indexKey,
     fresh,
     tasksStartInInbox: startInInbox,
+    ranks: ranksTasks(types),
     moment: writes.moment,
     caughtUp,
   });
@@ -703,6 +705,7 @@ function useInboxListing({
   indexKey,
   fresh,
   tasksStartInInbox,
+  ranks,
   moment,
   caughtUp,
 }: {
@@ -711,6 +714,8 @@ function useInboxListing({
   indexKey: string;
   fresh: boolean;
   tasksStartInInbox: boolean;
+  /** Whether the vault's tasks are ranked 1 to 4 (`ranksTasks`): then each carries its priority. */
+  ranks: boolean;
   /** The page's clock of reads and writes, which each read is stamped from as it begins. */
   moment: { current: number };
   /** Changes once a refresh asked for after the page's writes lands: read again, to show what it answers. */
@@ -736,8 +741,8 @@ function useInboxListing({
     const begun = { at: moment.current, indexKey };
     const read =
       through === null
-        ? listInbox({ index, tasksStartInInbox })
-        : listInboxThrough({ index, through, tasksStartInInbox });
+        ? listInbox({ index, tasksStartInInbox, ranksTasks: ranks })
+        : listInboxThrough({ index, through, tasksStartInInbox, ranksTasks: ranks });
     // Shown further down while this read ran: what it found stops short of that, so read again that far.
     const reachedPast = () => reach.current !== begunFrom && reach.current?.vaultKey === vaultKey;
     const settle = (next: Listing) => {
@@ -753,7 +758,18 @@ function useInboxListing({
     return () => {
       cancelled = true;
     };
-  }, [index, indexKey, fresh, vaultKey, tasksStartInInbox, readAgain, land, moment, caughtUp]);
+  }, [
+    index,
+    indexKey,
+    fresh,
+    vaultKey,
+    tasksStartInInbox,
+    ranks,
+    readAgain,
+    land,
+    moment,
+    caughtUp,
+  ]);
 
   const showMore = useCallback(() => {
     const shown = listing?.vaultKey === vaultKey ? listing.contents : null;
@@ -762,7 +778,7 @@ function useInboxListing({
     const after = shown?.last ?? null;
     if (shown === null || !shown.truncated || after === null) return;
     const begun = landed.current;
-    listInbox({ index, after, tasksStartInInbox })
+    listInbox({ index, after, tasksStartInInbox, ranksTasks: ranks })
       .then((page) => {
         reach.current = { vaultKey, through: page.last ?? after };
         // Another read landed meanwhile, so the list is newer than this page: read it again, this far down.
@@ -773,7 +789,7 @@ function useInboxListing({
         if (landed.current === begun)
           land({ vaultKey, contents: shown, error: errorMessage(cause), read });
       });
-  }, [listing, vaultKey, index, tasksStartInInbox, land]);
+  }, [listing, vaultKey, index, tasksStartInInbox, ranks, land]);
 
   return { listing, showMore };
 }

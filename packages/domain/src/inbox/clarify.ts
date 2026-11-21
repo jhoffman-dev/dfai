@@ -59,6 +59,9 @@ export type ClarifyPlan =
 const TASK_ONLY =
   'Only a task is given a status, someone to wait on or a date: file this note under a project, or make it a task first.';
 
+const OWN_PRIORITY =
+  'This vault’s Task type keeps a priority of its own: set it in the task’s properties.';
+
 /** Whether `day` is a calendar day written `YYYY-MM-DD`. */
 const isDay = (day: string) => addDays(day, 0) === day;
 
@@ -68,7 +71,11 @@ const typeOf = (properties: Properties) => {
 };
 
 /** A vault that has not said otherwise follows GTD: all eight, and a new task starts in the Inbox. */
-const GTD_VOCABULARY: ClarifyVocabulary = { statuses: GTD_STATUSES, startsAt: NEW_TASK_STATUS };
+const GTD_VOCABULARY: ClarifyVocabulary = {
+  statuses: GTD_STATUSES,
+  startsAt: NEW_TASK_STATUS,
+  ranks: true,
+};
 
 /** How much of a status nobody knows is said back: what was sent may be any length. */
 const SHOWN_STATUS_LENGTH = 40;
@@ -124,7 +131,11 @@ function taskChanges({
     const named = contexts.map((context) => context.trim()).filter((context) => context !== '');
     changes[TASK_KEYS.contexts] = named.length === 0 ? null : [...new Set(named)];
   }
-  if (priority !== undefined) changes[TASK_KEYS.priority] = priority;
+  if (priority !== undefined) {
+    // A vault whose Task type keeps a priority of its own is never given a 1-to-4 one.
+    if (!vocabulary.ranks) return { refused: OWN_PRIORITY };
+    changes[TASK_KEYS.priority] = priority;
+  }
   return { changes };
 }
 
@@ -215,7 +226,12 @@ export function clarifyPlan({
   if (Object.keys(changes).length === 0 && fileUnder === null) {
     return { refused: 'Nothing was chosen: give it a status, a project, a person or a date.' };
   }
-  const ruled = taskRuleChanges({ before: properties, changes, today });
+  const ruled = taskRuleChanges({
+    before: properties,
+    changes,
+    today,
+    holdsPriority: vocabulary.ranks,
+  });
   if ('refused' in ruled) return ruled;
   return { changes: ruled.changes, fileUnder };
 }

@@ -66,6 +66,11 @@ export interface TableSchema {
    * option with none is coloured by its value.
    */
   readonly colors?: Readonly<Record<string, OptionColors>>;
+  /**
+   * Whether its `priority` is a task's 1 to 4 (`isTaskPriorityField`), drawn
+   * as the P1 to P4 pill (#913). Left out, it is a number like any other.
+   */
+  readonly ranksPriority?: boolean;
 }
 
 const NO_SCHEMA: TableSchema = { kinds: {}, labels: {}, noun: '' };
@@ -264,6 +269,7 @@ function TableSheet({
     labels: useSteadyValue(schema.labels, sameEntries),
     properties,
     colors,
+    ranksPriority: schema.ranksPriority === true,
     onOpenNote,
     onPeek,
     editor,
@@ -430,6 +436,7 @@ function useRowLook({
   labels,
   properties,
   colors,
+  ranksPriority,
   onOpenNote,
   onPeek,
   editor,
@@ -443,6 +450,7 @@ function useRowLook({
   labels: RowLook['labels'];
   properties: RowLook['properties'];
   colors: RowLook['colors'];
+  ranksPriority: boolean;
   onOpenNote: TableViewProps['onOpenNote'];
   onPeek: TableViewProps['onPeek'];
   editor: CellEditorHooks | undefined;
@@ -474,6 +482,7 @@ function useRowLook({
       labels,
       properties,
       colors,
+      ranksPriority,
       onOpenNote: open,
       onOpenRow: openRow,
       editor,
@@ -487,6 +496,7 @@ function useRowLook({
       labels,
       properties,
       colors,
+      ranksPriority,
       open,
       openRow,
       editor,

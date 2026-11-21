@@ -6,6 +6,17 @@ import { atlasQueryIndex } from '../testing/query-index.ts';
 import { listInbox } from './list-inbox.ts';
 
 describe('listInbox', () => {
+  it('carries a task’s priority only where the vault ranks its tasks 1 to 4 (#913)', async () => {
+    const query = atlasQueryIndex({
+      markdown: fakeMarkdown(),
+      files: { 'Inbox/Call the bank.md': '---\ntype: task\npriority: 3\n---\n' },
+    });
+    const taskOf = async (ranksTasks: boolean) =>
+      (await listInbox({ index: fakeIndexPort({ query }), ranksTasks })).items[0]?.task;
+    expect(await taskOf(true)).toMatchObject({ priority: 3 });
+    expect(await taskOf(false)).not.toHaveProperty('priority');
+  });
+
   it('lists every note waiting in the Inbox, of any type or none', async () => {
     const query = atlasQueryIndex({
       markdown: fakeMarkdown(),

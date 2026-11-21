@@ -1,4 +1,4 @@
-import { optionColorsByKey, type ObjectType } from '@dfai/domain';
+import { isTaskPriorityField, optionColorsByKey, type ObjectType } from '@dfai/domain';
 import type { TableSchema } from '@dfai/ui';
 
 /**
@@ -13,6 +13,9 @@ export function schemaOf(type: ObjectType | null, fallbackNoun: string): TableSc
     labels: Object.fromEntries(properties.map((def) => [def.key, def.label])),
     colors: optionColorsByKey(properties),
     noun: type?.label ?? fallbackNoun,
+    ranksPriority: properties.some((def) =>
+      isTaskPriorityField({ typeName: type?.name ?? null, def }),
+    ),
   };
 }
 

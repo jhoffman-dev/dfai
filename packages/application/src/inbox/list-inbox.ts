@@ -33,6 +33,11 @@ interface InboxReading {
    * types): then a task given another status has left the list (#112).
    */
   tasksStartInInbox?: boolean;
+  /**
+   * Whether the vault's tasks are ranked 1 to 4 (`ranksTasks` of its types,
+   * #913): then each task carries its priority; otherwise it carries none.
+   */
+  ranksTasks?: boolean;
 }
 
 /**
@@ -48,12 +53,20 @@ export async function listInbox({
   limit = INBOX_LIST_LIMIT,
   after = null,
   tasksStartInInbox = false,
+  ranksTasks = false,
 }: InboxReading & {
   limit?: number;
   /** The last note of the page before; the first page when null. */
   after?: InboxKey | null;
 }): Promise<InboxListing> {
-  const page = await readPage({ index, limit, after, through: null, tasksStartInInbox });
+  const page = await readPage({
+    index,
+    limit,
+    after,
+    through: null,
+    tasksStartInInbox,
+    ranksTasks,
+  });
   // A first page that holds them all has counted them; any other page asks.
   const total =
     page.more || after !== null ? await countInbox(index, tasksStartInInbox) : page.items.length;
@@ -70,6 +83,7 @@ export async function listInboxThrough({
   index,
   through,
   tasksStartInInbox = false,
+  ranksTasks = false,
 }: InboxReading & { through: InboxKey }): Promise<InboxListing> {
   const items: InboxItem[] = [];
   // `through` itself may have been filed since: the last listed is the last read.
@@ -81,6 +95,7 @@ export async function listInboxThrough({
       after: last,
       through,
       tasksStartInInbox,
+      ranksTasks,
     });
     items.push(...page.items);
     last = page.last ?? last;
@@ -97,6 +112,7 @@ async function readPage({
   after,
   through,
   tasksStartInInbox,
+  ranksTasks,
 }: Required<InboxReading> & {
   limit: number;
   after: InboxKey | null;
@@ -129,6 +145,7 @@ async function readPage({
       due: cell(row, 'due'),
       projectWritten: cell(row, 'projectWritten'),
       dueWritten: cell(row, 'dueWritten'),
+      ...(ranksTasks && { priority: cell(row, 'priority') }),
     });
     return { item, key: inboxKeyOf({ path, modified: cell(row, 'modified') }) };
   });

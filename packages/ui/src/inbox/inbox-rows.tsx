@@ -513,19 +513,22 @@ function ClarifyTask({
         disabled={busy}
         onPick={(due) => pick({ due })}
       />
-      <select
-        className="inbox__file inbox__priority"
-        aria-label={`Priority of ${item.title}`}
-        value={priorityChoiceOf(draft.priority === undefined ? task.priority : draft.priority)}
-        disabled={busy}
-        onChange={(event) => pick({ priority: priorityFromChoice(event.target.value) })}
-      >
-        {PRIORITY_CHOICES.map((choice) => (
-          <option key={choice.value} value={choice.value}>
-            {choice.label}
-          </option>
-        ))}
-      </select>
+      {/* Offered only where the vault ranks its tasks 1 to 4: the read says so by carrying it. */}
+      {task.priority !== undefined && (
+        <select
+          className="inbox__file inbox__priority"
+          aria-label={`Priority of ${item.title}`}
+          value={priorityChoiceOf(draft.priority === undefined ? task.priority : draft.priority)}
+          disabled={busy}
+          onChange={(event) => pick({ priority: priorityFromChoice(event.target.value) })}
+        >
+          {PRIORITY_CHOICES.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="submit"
         className="btn btn--primary btn--sm"

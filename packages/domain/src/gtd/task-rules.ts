@@ -82,10 +82,10 @@ function spelledAsStatus(before: Properties, changes: Properties): Properties {
  *   one rolled on (the roll writes `lastCompleted` with `due` or `status`),
  *   loses a `focus` that is a day, unless the change names `focus` itself.
  *   One that is the person's own, or blank, is left as it is.
- * - A priority is 1 to 4, or none (#913): its digit as text is written as
- *   the number, a blank takes the key out, and anything else is refused.
- *   Only a change that names `priority` is judged, so a note that already
- *   holds another value can still be edited otherwise.
+ * - A priority is 1 to 4, or none (#913), where the caller says the vault's
+ *   Task type keeps it so (`holdsPriority`): its digit as text is written
+ *   as the number, a blank takes the key out, and anything else is refused.
+ *   Only a change that names `priority` is judged; a new note's, never.
  *
  * A status is read as the index reads it — trimmed, a one-item list as its
  * item — so a spelling the Archive rule reads is held to it too, and a GTD
@@ -97,19 +97,31 @@ export function taskRuleChanges({
   before,
   changes,
   today,
+  holdsPriority = false,
 }: {
   before: Properties;
   changes: Properties;
   /** `YYYY-MM-DD`, from the injected clock. */
   today: string;
+  /**
+   * Whether the change is held to the 1-to-4 priority: the caller knows the
+   * vault's Task type keeps it so (`keepsTaskPriority`). Left out, a
+   * `priority` is written as given, as it was before DFAI had one (#913).
+   */
+  holdsPriority?: boolean;
 }): TaskRuleOutcome {
-  const prioritised = withPriorityRule(before, spelledAsStatus(before, changes));
+  const spelled = spelledAsStatus(before, changes);
+  const prioritised = holdsPriority ? taskPriorityChanges(before, spelled) : { changes: spelled };
   if ('refused' in prioritised) return prioritised;
   return heldToRules({ before, changes: prioritised.changes, today });
 }
 
-/** The change with the priority it sets as a priority is written, on a note that is a task; or why not. */
-function withPriorityRule(before: Properties, changes: Properties): TaskRuleOutcome {
+/**
+ * The change with the priority it names written as a priority is, on a note
+ * that is a task; or why not (#913). A change that does not name `priority`
+ * passes as it is, so a value the note already holds is never judged.
+ */
+export function taskPriorityChanges(before: Properties, changes: Properties): TaskRuleOutcome {
   const key = TASK_KEYS.priority;
   if (!has(changes, key) || !isTaskNote(changed(before, changes))) return { changes };
   const priority = priorityChange(changes[key]);

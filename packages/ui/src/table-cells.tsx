@@ -6,6 +6,7 @@ import {
   optionColor,
   optionColorsOf,
   propertyRole,
+  TASK_KEYS,
   taskPriorityOf,
   type OptionColors,
   type PropertyDef,
@@ -50,6 +51,8 @@ export interface RowLook {
   readonly properties: Readonly<Record<string, PropertyDef>>;
   /** The colours the type chose for each select's options, which its pills are drawn in. */
   readonly colors: Readonly<Record<string, OptionColors>>;
+  /** Whether the table's `priority` column is a task's 1 to 4, drawn as P1 to P4 (#913). */
+  readonly ranksPriority?: boolean;
   /** Opens a note a cell links: a relation's value. */
   readonly onOpenNote: (path: string, how?: OpenHow) => void;
   /** A row's name clicked: peeks or opens its note, as the click and the table say. */
@@ -263,7 +266,7 @@ function CellFor({
       />
     );
   }
-  const face = faceOf({ kind, column, value });
+  const face = faceOf({ kind, column, value, ranksPriority: look.ranksPriority === true });
   const text = value === null || value === undefined ? '' : String(value);
   const colors = { key: column, colors: optionColorsOf(look.colors, column) };
   if (editor === undefined) {
@@ -369,17 +372,21 @@ function faceOf({
   kind,
   column,
   value,
+  ranksPriority,
 }: {
   kind: PropertyKind | undefined;
   column: string;
   value: unknown;
+  /** Whether the table's `priority` is a task's 1 to 4 (`RowLook.ranksPriority`). */
+  ranksPriority: boolean;
 }): CellLook {
   if (kind === 'select') return 'pill';
   if (kind === 'multiSelect') return 'pills';
-  const role = propertyRole(column);
   // A task's priority (#913) as its pill; a value that is not one of the four reads as written.
-  if (role === 'priority' && taskPriorityOf(value) !== null) return 'priority';
-  return role === 'person' && isYou(value) ? 'you' : 'text';
+  if (ranksPriority && column === TASK_KEYS.priority && taskPriorityOf(value) !== null) {
+    return 'priority';
+  }
+  return propertyRole(column) === 'person' && isYou(value) ? 'you' : 'text';
 }
 
 /**

@@ -1,4 +1,10 @@
-import { choosesForToday, todayLists, type TodayLists } from '@dfai/domain';
+import {
+  choosesForToday,
+  ranksTasks,
+  todayLists,
+  type ReviewTask,
+  type TodayLists,
+} from '@dfai/domain';
 import type { Clock } from '../ports.ts';
 import {
   readReviewSources,
@@ -33,22 +39,39 @@ export interface TodayReport extends TodayLists {
 export async function readToday({
   clock,
   choosing,
+  ranking,
   ...reads
 }: ReviewReadPorts &
   InboxRule & {
     clock: Pick<Clock, 'today' | 'now'>;
     choosing?: boolean;
+    /** Whether the vault's tasks are ranked 1 to 4 (`ranksTasks`, #913); read when not said. */
+    ranking?: boolean;
   }): Promise<TodayReport> {
-  const [{ tasks, projects, inbox, truncated }, chooses] = await Promise.all([
+  const types =
+    choosing === undefined || ranking === undefined
+      ? loadObjectTypes({ fs: reads.fs, markdown: reads.markdown })
+      : null;
+  const [{ tasks, projects, inbox, truncated }, chooses, ranks] = await Promise.all([
     readReviewSources(reads),
-    choosing ?? loadObjectTypes({ fs: reads.fs, markdown: reads.markdown }).then(choosesForToday),
+    choosing ?? types?.then(choosesForToday) ?? false,
+    ranking ?? types?.then(ranksTasks) ?? false,
   ]);
   const at = { today: clock.today(), now: clock.now() };
+  // A vault that keeps a priority of its own is shown none of this feature's (#913).
+  const listed = ranks ? tasks : tasks.map(withoutPriority);
   return {
-    ...todayLists({ tasks, projects, at, choosing: chooses }),
+    ...todayLists({ tasks: listed, projects, at, choosing: chooses }),
     today: at.today,
     choosing: chooses,
     inbox,
     truncated,
   };
+}
+
+/** A task with its priority left out, which a row then neither shows nor offers. */
+function withoutPriority(task: ReviewTask): ReviewTask {
+  return Object.fromEntries(
+    Object.entries(task).filter(([key]) => key !== 'priority'),
+  ) as unknown as ReviewTask;
 }
