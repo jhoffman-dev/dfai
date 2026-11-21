@@ -18,6 +18,8 @@ export function describeSyncStatus(status: SyncStatus): { label: string; tone: s
       return { label: 'Offline', tone: 'gray' };
     case 'needs-sign-in':
       return { label: 'Needs sign-in', tone: 'red' };
+    case 'error':
+      return { label: 'Sync stopped', tone: 'red' };
     case 'conflicts':
       return {
         label: status.count === 1 ? '1 conflict' : `${status.count} conflicts`,
@@ -35,6 +37,7 @@ export function SyncChip({ sync }: { sync: SyncControls }) {
       type="button"
       className={`sync-chip tone-${tone}`}
       aria-label={`Sync status: ${label}. Sync now`}
+      title={status.kind === 'error' ? status.message : undefined}
       disabled={status.kind === 'syncing'}
       onClick={() => sync.syncNow()}
     >

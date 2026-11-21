@@ -49,11 +49,10 @@ const UNSAID_RATE_LIMIT_WAIT_MS = 60_000;
 /** GitHub said no, with this status: the remote decides what that means. */
 export class GitHubRefusedError extends Error {
   override readonly name = 'GitHubRefusedError';
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
+  readonly status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 

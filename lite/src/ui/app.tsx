@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { GraphPage } from './graph-page/graph-page.tsx';
-import { NotePane } from './note/note-pane.tsx';
+import { NotePane, preloadEditor } from './note/note-pane.tsx';
 import type { Route } from './routing/route.ts';
 import { useRoute } from './routing/use-route.ts';
 import { SearchPalette } from './search/search-palette.tsx';
@@ -11,7 +11,8 @@ import { useStartRoute } from './shell/use-start-route.ts';
 import { Sidebar } from './sidebar/sidebar.tsx';
 import { createNoteActions } from './state/note-actions.ts';
 import { createUiStore, useUi } from './state/ui-store.ts';
-import { createVaultStore } from './state/vault-store.ts';
+import { createVaultStore, useVault } from './state/vault-store.ts';
+import type { SyncControls } from './sync/sync-status.ts';
 import { TagsPage } from './tags/tags-page.tsx';
 import './theme.css';
 import './app.css';
@@ -27,8 +28,40 @@ function contextFor(services: AppServices): AppContextValue {
   return { services, deps, vault, ui, actions };
 }
 
-function MainPane({ route }: { route: Route }) {
+/** Fetching the vault on the first sync, or a vault with no notes yet. */
+function EmptyVault({ sync }: { sync: SyncControls }) {
+  const status = useSyncExternalStore(sync.subscribe, sync.getStatus);
+  return (
+    <div className="app-empty" role="status">
+      {status.kind === 'syncing'
+        ? 'Fetching your notes from GitHub…'
+        : 'No notes yet. Start one with New note.'}
+    </div>
+  );
+}
+
+function Home() {
   const { actions, services } = useApp();
+  const empty = useVault((vault) => vault.tree.noteCount === 0);
+  if (empty && services.sync !== null) return <EmptyVault sync={services.sync} />;
+  return (
+    <div className="app-empty">
+      <p>
+        Press <kbd>⌥N</kbd> or <kbd>Ctrl N</kbd> to start a note, <kbd>⌘K</kbd> to find one.
+      </p>
+      <button
+        type="button"
+        className="primary-button"
+        onClick={() => actions.newNote().catch(actions.report)}
+      >
+        New note
+      </button>
+    </div>
+  );
+}
+
+function MainPane({ route }: { route: Route }) {
+  const { services } = useApp();
   switch (route.kind) {
     case 'note':
       return <NotePane key={route.path} path={route.path} />;
@@ -38,20 +71,7 @@ function MainPane({ route }: { route: Route }) {
       return <GraphPage activePath={services.settings.load().ui.lastOpenPath} />;
     case 'home':
     case 'new':
-      return (
-        <div className="app-empty">
-          <p>
-            Press <kbd>⌥N</kbd> or <kbd>Ctrl N</kbd> to start a note, <kbd>⌘K</kbd> to find one.
-          </p>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => actions.newNote().catch(actions.report)}
-          >
-            New note
-          </button>
-        </div>
-      );
+      return <Home />;
   }
 }
 
@@ -70,13 +90,16 @@ function Notice() {
 }
 
 function Shell() {
-  const { services, ui } = useApp();
+  const { services, ui, actions } = useApp();
   const route = useRoute();
   const paletteOpen = useUi((state) => state.paletteOpen);
   const settingsOpen = useUi((state) => state.settingsOpen);
   const drawerOpen = useUi((state) => state.drawerOpen);
-  const [connected, setConnected] = useState(() => services.settings.load().repo !== null);
   useShortcuts(route);
+  // The editor's code loads straight after the first paint, so ⌘N never waits for it.
+  useEffect(() => {
+    preloadEditor().catch(actions.report);
+  }, [actions]);
   useStartRoute(route);
   // A note or a page chosen in the drawer closes it, on a phone.
   useEffect(() => ui.setState({ drawerOpen: false }), [route, ui]);
@@ -107,7 +130,7 @@ function Shell() {
             <Icon name="search" />
           </button>
         </div>
-        {connected ? null : (
+        {services.sync !== null ? null : (
           <div className="app-banner" role="note">
             <span>Sample vault — connect a GitHub repository in Settings.</span>
             <button
@@ -124,10 +147,7 @@ function Shell() {
       {paletteOpen ? <SearchPalette onClose={() => ui.setState({ paletteOpen: false })} /> : null}
       {settingsOpen ? (
         <Suspense fallback={null}>
-          <SettingsDialog
-            onClose={() => ui.setState({ settingsOpen: false })}
-            onSaved={(settings) => setConnected(settings.repo !== null)}
-          />
+          <SettingsDialog onClose={() => ui.setState({ settingsOpen: false })} />
         </Suspense>
       ) : null}
       <Notice />

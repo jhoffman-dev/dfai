@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { Settings } from '../../application/index.ts';
 import { useApp } from '../services.ts';
 import '../shell/dialog.css';
+import { describeSyncStatus } from '../sync/sync-chip.tsx';
+import type { SyncControls } from '../sync/sync-status.ts';
 
 interface RepoForm {
   readonly repository: string;
@@ -24,14 +26,30 @@ function parseRepository(text: string): { owner: string; name: string } | null {
 }
 
 /** The GitHub repository the vault syncs with, and the token that reaches it. */
-export default function SettingsDialog({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  /** After a save: the app re-reads whether a repository is connected. */
-  onSaved: (settings: Settings) => void;
-}) {
+/** Whether `next` reaches another remote, or the same one another way: a new start either way. */
+function connectionChanged(before: Settings, next: Settings): boolean {
+  return JSON.stringify([before.repo, before.token]) !== JSON.stringify([next.repo, next.token]);
+}
+
+/** Where sync stands, in words, with the reason it stopped. Never the token. */
+function SyncLine({ sync }: { sync: SyncControls }) {
+  const status = useSyncExternalStore(sync.subscribe, sync.getStatus);
+  const { label } = describeSyncStatus(status);
+  const reason =
+    status.kind === 'error'
+      ? status.message
+      : status.kind === 'needs-sign-in'
+        ? 'GitHub refused the token: check it has Contents read and write on this repository.'
+        : null;
+  return (
+    <p className="dialog-hint" role="status">
+      Sync: {label}
+      {reason === null ? '' : ` — ${reason}`}
+    </p>
+  );
+}
+
+export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   const { services } = useApp();
   const [form, setForm] = useState(() => formOf(services.settings.load()));
   const [problem, setProblem] = useState<string | null>(null);
@@ -49,16 +67,21 @@ export default function SettingsDialog({
       setProblem('Write the repository as owner/name, for example mara-quill/notes.');
       return;
     }
-    const current = services.settings.load();
-    const next: Settings = {
-      ...current,
+    save({
       repo: repo === null ? null : { ...repo, branch: form.branch.trim() || 'main' },
       token: form.token.trim() === '' ? null : form.token.trim(),
-    };
-    services.settings.save(next);
-    onSaved(next);
-    onClose();
+    });
   };
+
+  const save = (connection: Pick<Settings, 'repo' | 'token'>) => {
+    const before = services.settings.load();
+    const next: Settings = { ...before, ...connection };
+    services.settings.save(next);
+    onClose();
+    if (connectionChanged(before, next)) services.reconnect();
+  };
+
+  const disconnect = () => save({ repo: services.settings.load().repo, token: null });
 
   return (
     <div
@@ -97,6 +120,13 @@ export default function SettingsDialog({
           A fine-grained token with Contents read and write on that one repository. It stays in this
           browser and is sent only to GitHub.
         </p>
+        {services.sync === null ? null : <SyncLine sync={services.sync} />}
+        {services.sync === null ? null : (
+          <p className="dialog-hint">
+            Disconnecting forgets the token. The notes stay in this browser until its site data is
+            cleared, and come back when you connect again.
+          </p>
+        )}
         {problem === null ? null : (
           <p className="dialog-hint" role="alert">
             {problem}
@@ -114,6 +144,11 @@ export default function SettingsDialog({
           >
             Sync now
           </button>
+          {services.sync === null ? null : (
+            <button type="button" className="quiet-button" onClick={disconnect}>
+              Disconnect
+            </button>
+          )}
           <button type="button" className="quiet-button" onClick={onClose}>
             Cancel
           </button>

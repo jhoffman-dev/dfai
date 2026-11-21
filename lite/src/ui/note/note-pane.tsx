@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { createNoteFromLink, noteTitle, rankNoteSuggestions } from '../../application/index.ts';
 import type { VaultPath } from '../../domain/vault/index.ts';
 import type { EditorBridge } from '../editor/bridge.ts';
-import { NoteEditor } from '../editor/note-editor.tsx';
 import { useApp, type AppContextValue } from '../services.ts';
 import { Icon } from '../shell/icons.tsx';
 import { useUi } from '../state/ui-store.ts';
@@ -15,6 +14,13 @@ import './note.css';
 
 // markdown-it and DOMPurify load the first time a note is read, not at start.
 const ReadView = lazy(() => import('../reader/read-view.tsx'));
+
+/**
+ * CodeMirror is most of the app's weight, so it loads after the first paint:
+ * `preloadEditor` starts it at once, and until it lands the note's text shows as it is.
+ */
+export const preloadEditor = () => import('../editor/note-editor.tsx');
+const NoteEditor = lazy(() => preloadEditor().then(({ NoteEditor }) => ({ default: NoteEditor })));
 
 const TAG_SUGGESTIONS = 12;
 
@@ -91,9 +97,12 @@ export function NotePane({ path }: { path: VaultPath }) {
   useFlushOnLeave(autosave);
   const bridge = useMemo(() => editorBridge(app, saver), [app, saver]);
   const preview = useUi((state) => state.preview);
-  const focusEditor = useUi(
+  const wantsEditor = useUi(
     (state) => state.pendingFocus?.path === path && state.pendingFocus.target === 'editor',
   );
+  // Kept from the moment the pane opens: the editor may land a moment later, after the
+  // request is cleared, and must still take the caret.
+  const [focusEditor] = useState(wantsEditor);
   // The tree changes when paths do: enough to notice this note was deleted or moved.
   useVault((vault) => vault.tree);
   // While reading, follow every change (a sync may pull new text); while editing, none.
@@ -105,8 +114,8 @@ export function NotePane({ path }: { path: VaultPath }) {
   );
 
   useEffect(() => {
-    if (focusEditor) ui.setState({ pendingFocus: null });
-  }, [focusEditor, ui]);
+    if (wantsEditor) ui.setState({ pendingFocus: null });
+  }, [wantsEditor, ui]);
 
   if (file === null) {
     return (
@@ -140,7 +149,9 @@ export function NotePane({ path }: { path: VaultPath }) {
             <ReadView text={file.text} resolves={resolves} onFollowLink={bridge.followLink} />
           </Suspense>
         ) : (
-          <NoteEditor initialText={file.text} autoFocus={focusEditor} bridge={bridge} />
+          <Suspense fallback={<pre className="note-editor-placeholder">{file.text}</pre>}>
+            <NoteEditor initialText={file.text} autoFocus={focusEditor} bridge={bridge} />
+          </Suspense>
         )}
       </div>
       <Backlinks path={path} />

@@ -15,6 +15,12 @@ export {
   wikiLinkSpans,
 } from '../domain/links/index.ts';
 export { findTags, tagKey } from '../domain/tags/index.ts';
-export { flattenFolderTree, noteTitle, folderOf, joinPath } from '../domain/vault/index.ts';
+export {
+  flattenFolderTree,
+  noteTitle,
+  folderOf,
+  joinPath,
+  pathAfterMove,
+} from '../domain/vault/index.ts';
 export { isConflictCopyPath } from '../domain/sync/index.ts';
 export { FAVORITES_PATH } from '../domain/favorites/index.ts';

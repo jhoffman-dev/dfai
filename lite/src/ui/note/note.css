@@ -101,3 +101,14 @@
     font-size: 22px;
   }
 }
+
+/* The note's text while the editor loads: set as the editor sets it, so nothing jumps. */
+.note-editor-placeholder {
+  min-height: 60vh;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-note);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

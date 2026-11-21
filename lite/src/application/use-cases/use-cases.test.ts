@@ -6,6 +6,7 @@ import {
   createQuickNote,
   deleteNote,
   openVault,
+  renameFolder,
   renameNote,
   reorderFavorite,
   saveNoteText,
@@ -159,6 +160,35 @@ describe('renaming a note', () => {
       kind: 'refused',
     });
     expect(await renameNote(deps, { from: 'Nope.md', to: 'X.md' })).toMatchObject({
+      kind: 'refused',
+    });
+    expect(deps.session.file(MARA)).not.toBeNull();
+  });
+});
+
+describe('renaming a folder', () => {
+  it('moves every note under it, rewriting links and favourites', async () => {
+    const deps = await opened({ 'People/Team/Tobias Fenn.md': 'See [[People/Mara Quill]].' });
+    expect(await renameFolder(deps, { from: 'People', to: 'Contacts' })).toEqual({
+      kind: 'renamed',
+      moved: 2,
+      retargeted: 2,
+    });
+    expect(deps.session.index.paths()).toContain('Contacts/Team/Tobias Fenn.md');
+    expect(deps.session.file(PLAN)?.text).toContain('[[Contacts/Mara Quill]]');
+    expect(deps.session.file('Contacts/Team/Tobias Fenn.md')?.text).toBe(
+      'See [[Contacts/Mara Quill]].',
+    );
+    expect(deps.session.favorites).toEqual(['Contacts/Mara Quill.md']);
+  });
+
+  it('refuses a clash, or a move into itself, before anything moves', async () => {
+    const deps = await opened({ 'Contacts/Mara Quill.md': '' });
+    expect(await renameFolder(deps, { from: 'People', to: 'contacts' })).toMatchObject({
+      kind: 'refused',
+      reason: expect.stringMatching(/already at/),
+    });
+    expect(await renameFolder(deps, { from: 'People', to: 'People/Old' })).toMatchObject({
       kind: 'refused',
     });
     expect(deps.session.file(MARA)).not.toBeNull();

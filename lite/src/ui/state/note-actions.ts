@@ -2,6 +2,8 @@ import {
   createNoteFromLink,
   createQuickNote,
   deleteNote,
+  pathAfterMove,
+  renameFolder,
   renameNote,
   reorderFavorite,
   tagKey,
@@ -12,6 +14,7 @@ import {
   type VaultDeps,
 } from '../../application/index.ts';
 import type { VaultPath } from '../../domain/vault/index.ts';
+import { parseRoute } from '../routing/route.ts';
 import { navigate } from '../routing/use-route.ts';
 import type { UiStore } from './ui-store.ts';
 
@@ -34,6 +37,8 @@ export interface NoteActions {
   moveFavorite(path: VaultPath, index: number): Promise<void>;
   rename(from: VaultPath, to: VaultPath, options?: { open: boolean }): Promise<RenameResult>;
   remove(path: VaultPath, options?: { wasOpen: boolean }): Promise<void>;
+  /** Renames or moves a folder with every note in it; the open note follows. */
+  renameFolder(from: VaultPath, to: VaultPath): Promise<void>;
   /** Opens a note with its title ready to rename. */
   startRename(path: VaultPath): void;
   updatePrefs(patch: Partial<UiPrefs>): void;
@@ -84,6 +89,16 @@ export function createNoteActions({
     async remove(path, { wasOpen } = { wasOpen: false }) {
       await deleteNote(deps, { path });
       if (wasOpen) navigate({ kind: 'home' }, { replace: true });
+    },
+    async renameFolder(from, to) {
+      const result = await renameFolder(deps, { from, to });
+      if (result.kind === 'refused') {
+        notice(result.reason);
+        return;
+      }
+      const open = parseRoute(window.location.hash);
+      const moved = open.kind === 'note' ? pathAfterMove(open.path, { from, to }) : null;
+      if (moved !== null) navigate({ kind: 'note', path: moved }, { replace: true });
     },
     startRename(path) {
       ui.setState({ pendingFocus: { path, target: 'title' } });

@@ -21,6 +21,8 @@ export interface AppServices {
   readonly search: SearchEngine;
   /** Null until a repository is connected and the sync scheduler is wired. */
   readonly sync: SyncControls | null;
+  /** Starts again on the settings just saved: another repository is another vault. */
+  readonly reconnect: () => void;
 }
 
 /** The services plus the stores the components read slices of. */

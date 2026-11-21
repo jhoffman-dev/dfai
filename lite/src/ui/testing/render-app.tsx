@@ -54,6 +54,7 @@ export async function renderApp({
     settings: new MemorySettingsStore(initial),
     clock: new FixedClock(),
     sync: null,
+    reconnect: () => undefined,
   };
   return { services, ...render(<App services={services} />) };
 }

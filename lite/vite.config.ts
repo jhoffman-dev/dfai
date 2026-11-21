@@ -33,5 +33,7 @@ export default defineConfig({
       },
     }),
   ],
+  // The one chunk past Vite's 500 kB is CodeMirror's, loaded after the first paint.
+  build: { chunkSizeWarningLimit: 600 },
   preview: { port: 4791, strictPort: true },
 });

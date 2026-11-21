@@ -20,6 +20,7 @@ export interface MenuContext {
   readonly activePath: VaultPath | null;
   readonly title: (path: VaultPath) => string;
   readonly askMove: (path: VaultPath) => void;
+  readonly askRenameFolder: (path: VaultPath) => void;
   readonly confirm: (message: string) => boolean;
 }
 
@@ -39,7 +40,10 @@ export function menuItemsFor(target: MenuTarget, context: MenuContext): MenuItem
   const { actions } = context;
   const later = (promise: Promise<unknown>) => void promise.catch(actions.report);
   if (target.kind === 'folder') {
-    return [{ label: 'New note here', run: () => later(actions.newNote({ folder: target.path })) }];
+    return [
+      { label: 'New note here', run: () => later(actions.newNote({ folder: target.path })) },
+      { label: 'Rename folder…', run: () => context.askRenameFolder(target.path) },
+    ];
   }
   const { path } = target;
   const isFavorite = context.favorites.includes(path);

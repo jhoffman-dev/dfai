@@ -10,6 +10,7 @@ import { FavoritesSection } from './favorites-section.tsx';
 import { FolderTree } from './folder-tree.tsx';
 import { menuItemsFor, type MenuTarget } from './menu-items.ts';
 import { MoveDialog } from './move-dialog.tsx';
+import { RenameFolderDialog } from './rename-folder-dialog.tsx';
 import { RowMenu } from './row-menu.tsx';
 import './sidebar.css';
 
@@ -21,6 +22,7 @@ export function Sidebar({ route }: { route: Route }) {
   const favorites = useVault((vault) => vault.favorites);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [moving, setMoving] = useState<VaultPath | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<VaultPath | null>(null);
   const activePath = route.kind === 'note' ? route.path : null;
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -88,11 +90,15 @@ export function Sidebar({ route }: { route: Route }) {
             activePath,
             title: noteTitle,
             askMove: setMoving,
+            askRenameFolder: setRenamingFolder,
             confirm: (message) => window.confirm(message),
           })}
         />
       )}
       {moving === null ? null : <MoveDialog path={moving} onClose={() => setMoving(null)} />}
+      {renamingFolder === null ? null : (
+        <RenameFolderDialog path={renamingFolder} onClose={() => setRenamingFolder(null)} />
+      )}
     </>
   );
 }

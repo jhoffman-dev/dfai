@@ -8,7 +8,9 @@ export type SyncStatus =
   | { readonly kind: 'offline' }
   /** The token is missing, wrong, or lacks access to the repository. */
   | { readonly kind: 'needs-sign-in' }
-  | { readonly kind: 'conflicts'; readonly count: number; readonly lastSyncedAt: Date | null };
+  | { readonly kind: 'conflicts'; readonly count: number; readonly lastSyncedAt: Date | null }
+  /** Sync stopped for another reason (the branch is gone, another repository): said in `message`. */
+  | { readonly kind: 'error'; readonly message: string };
 
 /**
  * What the UI needs from sync: the status now, a way to hear it change, and

@@ -10,7 +10,10 @@ import {
 
 /** A clock stopped at one moment, moved only by `set`. */
 export class FixedClock implements Clock {
-  constructor(private moment: Date = new Date(2026, 10, 21, 9, 0)) {}
+  private moment: Date;
+  constructor(moment: Date = new Date(2026, 10, 21, 9, 0)) {
+    this.moment = moment;
+  }
 
   now(): Date {
     return new Date(this.moment);
