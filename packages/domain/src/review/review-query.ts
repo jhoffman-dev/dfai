@@ -1,5 +1,6 @@
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
+import { taskPriorityOf } from '../gtd/task-priority.ts';
 import { firstDaySql, notOneDaySql, singleTextSql } from '../gtd/task-row.ts';
 import { splitWikiLinks, wikiLinkLabel } from '../markdown/wikilink.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
@@ -61,6 +62,7 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `  ${singleText(RECURRENCE_KEY)} AS "recurrence",`,
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOn",`,
       `  ${allItems(TASK_KEYS.contexts)} AS "contexts",`,
+      `  ${singleText(TASK_KEYS.priority)} AS "priority",`,
       `  (SELECT r.dst FROM relations AS r WHERE r.src = f.path AND r.key = '${FILED_UNDER_KEY}' AND r.dst IS NOT NULL ORDER BY r.idx LIMIT 1) AS "project",`,
       `  (SELECT pf.title FROM relations AS r JOIN files AS pf ON pf.path = r.dst WHERE r.src = f.path AND r.key = '${FILED_UNDER_KEY}' ORDER BY r.idx LIMIT 1) AS "projectTitle",`,
       `  (SELECT group_concat(n, char(31)) FROM (SELECT r.name AS n FROM relations AS r WHERE r.src = f.path AND r.key = '${FILED_UNDER_KEY}' ORDER BY r.idx)) AS "projectLinks"`,
@@ -155,6 +157,8 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     ...(Object.hasOwn(row, 'recurrence') && { recurrence: textOrNull(row['recurrence']) }),
     waitingOn: waitingOnNames(row['waitingOn']),
     contexts: itemsOf(row['contexts']),
+    // Absent when the row did not carry it, which is none: see ReviewTask.
+    ...(Object.hasOwn(row, 'priority') && { priority: taskPriorityOf(row['priority']) }),
     project: project === null ? null : createVaultPath(project),
     projectTitle: project === null ? null : (textOrNull(row['projectTitle']) ?? project),
     // Absent when the row did not carry it, which is not knowing it: see ReviewTask.

@@ -4,6 +4,7 @@ import {
   TASK_KEYS,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import type { TaskPriority } from '../gtd/task-priority.ts';
 import { addDays } from '../timeline/timeline.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 
@@ -38,6 +39,11 @@ export interface ReviewTask {
   readonly waitingOn: string;
   /** Its `contexts`, as written, in order; none when it has none. */
   readonly contexts: readonly string[];
+  /**
+   * How urgent it is, 1 to 4 (#913); null for none. Absent when the read did
+   * not say, which is read as none.
+   */
+  readonly priority?: TaskPriority | null;
   /** The note its `project` links, or null when it links none that exists. */
   readonly project: VaultPath | null;
   /** That note's title, or null when it links none. */

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   humanizeKey,
+  isTaskNote,
   notePropertyKind,
   relationTypes,
+  TASK_KEYS,
   validatePropertyValue,
   type ObjectType,
   type PropertyDef,
@@ -10,6 +12,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { isDatasource, isSavedView } from '@dfai/domain';
+import { ranksKnownTasks } from './use-types.ts';
 import {
   linkedTypeProblems,
   noteTypeName,
@@ -94,6 +97,11 @@ export function useNoteProperties({
     () => types.find((candidate) => candidate.name === typeName) ?? null,
     [types, typeName],
   );
+  // A task in a vault that ranks its tasks 1 to 4 picks its `priority` as None or P1 to P4 (#913).
+  const ranked = useMemo(
+    () => typeName !== null && isTaskNote({ type: typeName }) && ranksKnownTasks(types),
+    [types, typeName],
+  );
 
   /** Kinds given to properties added to this note alone, for the note they were added to. */
   const [added, setAdded] = useState<{
@@ -127,15 +135,20 @@ export function useNoteProperties({
     return [
       ...declared,
       ...extras.map((key) => undeclared(key, extraKind(key), properties[key])),
-    ].map((def) => ({
-      def,
-      value: properties[def.key] ?? null,
-      error:
-        validatePropertyValue({ def, value: properties[def.key] ?? null }) ??
-        linkProblems[def.key] ??
-        null,
-    }));
-  }, [note, isView, type, properties, addedKinds, linkProblems]);
+    ].map((def) => {
+      const value = properties[def.key] ?? null;
+      // A task's priority is a soft field (#913): any value is kept and picked
+      // over as "Other: …", so its row is never judged by its kind.
+      if (ranked && def.key === TASK_KEYS.priority) {
+        return { def, editor: 'priority' as const, value, error: null };
+      }
+      return {
+        def,
+        value,
+        error: validatePropertyValue({ def, value }) ?? linkProblems[def.key] ?? null,
+      };
+    });
+  }, [note, isView, type, properties, addedKinds, linkProblems, ranked]);
 
   const [relationChoices, setRelationChoices] = useState<
     Readonly<Record<string, readonly RelationChoice[]>>

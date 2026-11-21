@@ -108,6 +108,16 @@ describe('POST /v1/notes', () => {
     expect(api.files.has('Soup.md')).toBe(true);
   });
 
+  it('makes a task from a template holding a priority of its own, as written (#917 review)', async () => {
+    for (const line of ['priority: high', 'priority: 7', 'priority: "2"']) {
+      const template = `---\ntype: task\nstatus: backlog\n${line}\n---\n\n## Notes\n`;
+      const api = vault({ '.atlas/templates/Task.md': template });
+      const response = await create(api, { name: 'Call Sam', template: 'Task' });
+      expect(response.status).toBe(201);
+      expect(api.files.get('Tasks/2026/09/Call Sam.md')?.text).toBe(template);
+    }
+  });
+
   it('removes a template property set to null', async () => {
     const api = vault();
     await create(api, { name: 'Call Sam', template: 'Task', properties: { status: null } });

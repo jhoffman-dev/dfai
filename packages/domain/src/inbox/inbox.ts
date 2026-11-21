@@ -12,6 +12,7 @@ import {
   TASK_TYPE,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import { taskPriorityOf, type TaskPriority } from '../gtd/task-priority.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
 import {
   IMPORT_CONTRACT_KEY,
@@ -69,6 +70,18 @@ export interface InboxTask {
   readonly defer: string | null;
   /** `YYYY-MM-DD`, or null. */
   readonly due: string | null;
+  /**
+   * How urgent it is, 1 to 4 (#913); null for none, or for a value that is
+   * not one. Absent where the vault does not rank its tasks 1 to 4 (`ranksTasks`)
+   * or the read did not say: then its row shows and offers no priority.
+   */
+  readonly priority?: TaskPriority | null;
+  /**
+   * What the note holds under `priority` as written — `7`, `high` — or null
+   * for nothing: a soft field is kept as it is, and its row says "Other: 7"
+   * rather than none. Present when `priority` is.
+   */
+  readonly priorityWritten?: string | null;
 }
 
 /** A note waiting in the Inbox, as the Inbox lists it. */
@@ -327,6 +340,8 @@ export function compileInboxQuery({
       `  ${allItems(TASK_KEYS.waitingOn)} AS "waitingOnNames",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
+      `  ${singleValue(TASK_KEYS.priority)} AS "priority",`,
+      `  ${allItems(TASK_KEYS.priority)} AS "priorityWritten",`,
       `  files.modified AS "modified",`,
       `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared",`,
       `  ${allItems(FILED_UNDER_KEY)} AS "projectWritten",`,
@@ -400,6 +415,8 @@ export function inboxItem(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  priority?: unknown;
+  priorityWritten?: unknown;
   projectWritten?: unknown;
   dueWritten?: unknown;
 }): InboxItem {
@@ -438,6 +455,8 @@ function inboxTask(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  priority?: unknown;
+  priorityWritten?: unknown;
 }): InboxTask {
   return {
     status: gtdStatusOf(row.status),
@@ -446,7 +465,27 @@ function inboxTask(row: {
     waitingOnNames: waitingOnNames(row.waitingOnNames),
     defer: textOrNull(row.defer),
     due: textOrNull(row.due),
+    // Absent where the vault does not rank its tasks 1 to 4: its row offers no priority.
+    ...(Object.hasOwn(row, 'priority') && {
+      priority: taskPriorityOf(row.priority),
+      priorityWritten: priorityAsWritten(row.priorityWritten ?? row.priority),
+    }),
   };
+}
+
+/**
+ * What a task holds under `priority`, from its items as the statement joined
+ * them: one item as written, several as `[1, 2]`, a mapping as its JSON; null
+ * for nothing. What its Clarify picker shows as "Other: …".
+ */
+function priorityAsWritten(joined: unknown): string | null {
+  if (typeof joined !== 'string') return null;
+  const items = joined
+    .split('\u001f')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+  if (items.length === 0) return null;
+  return items.length === 1 ? (items[0] ?? null) : `[${items.join(', ')}]`;
 }
 
 const pathOrNull = (value: unknown): VaultPath | null => {

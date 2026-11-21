@@ -239,6 +239,26 @@ describe('clarifyPlan — who a task waits on, and a change of mind', () => {
   });
 });
 
+describe('clarifyPlan and a task’s priority (#913)', () => {
+  const plan = (clarification: Clarification) =>
+    clarifyPlan({
+      path: path('Inbox/Call the bank.md'),
+      properties: TASK,
+      clarification,
+      notePaths: NOTES,
+      today: TODAY,
+    });
+
+  it('writes the priority picked in the same save, and takes it away', () => {
+    expect(plan({ priority: 2 })).toMatchObject({ changes: { priority: 2 } });
+    expect(plan({ priority: null })).toMatchObject({ changes: { priority: null } });
+  });
+
+  it('refuses nothing for its priority: a soft field is written as given', () => {
+    expect(plan({ priority: 7 })).toMatchObject({ changes: { priority: 7 } });
+  });
+});
+
 describe('clarifyPlan — what the vault’s Task type lets a task be', () => {
   const OWN = parseObjectType({
     name: 'task',

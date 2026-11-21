@@ -21,6 +21,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { pillPaint } from './pill-paint.ts';
+import { priorityFromChoice, priorityPaint, priorityPicker } from './priority-pill.tsx';
 import { AddPropertyPopover, type NewProperty } from './add-property-popover.tsx';
 import { Icon, propertyGlyph } from './icon.tsx';
 import { LinkedNote, useNoteNames } from './note-names.tsx';
@@ -34,6 +35,11 @@ export interface PropertyRow {
   readonly def: PropertyDef;
   readonly value: unknown;
   readonly error: string | null;
+  /**
+   * The field it is edited in, where it is not its kind's: `priority` for a
+   * task's 1 to 4, picked as None or P1 to P4 (#913). The caller decides.
+   */
+  readonly editor?: 'priority';
 }
 
 /** Makes a note of type `target` called `name`; resolves with the link to write. */
@@ -251,6 +257,9 @@ function PropertyEditor({
   // "[object Object]", and typing one character into that would write the
   // string over the structure and take the dashboard with it. It is shown
   // instead, and edited in the frontmatter where it can be seen whole.
+  // A task's priority is picked whatever it holds (#913): a list or a map of
+  // the note's own shows as "Other: …", kept until a pick replaces it.
+  if (row.editor === 'priority') return <PriorityEditor {...props} />;
   if (isStructured(row.value)) {
     return <StructuredValue id={id} value={row.value} />;
   }
@@ -259,6 +268,7 @@ function PropertyEditor({
     case 'checkbox':
       return <CheckboxEditor {...props} />;
     case 'number':
+      // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
       return <NumberEditor {...props} />;
     case 'date':
       return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;
@@ -331,6 +341,34 @@ function useTyping(
 function NumberEditor({ id, text, onChange }: EditorProps) {
   const typing = useTyping(text, (typed) => onChange(typed === '' ? null : Number(typed)));
   return <input id={id} className="props__input props__input--number" type="number" {...typing} />;
+}
+
+/**
+ * A task's priority as a pill holding its choices — none, P1 to P4 — on its
+ * hue. A value of the note's own (`7`, `high`) is shown as "Other: 7" and kept
+ * until another is picked; picking none takes the key out.
+ */
+function PriorityEditor({ id, row, onChange }: EditorProps) {
+  const { selected, choices } = priorityPicker(row.value);
+  return (
+    <span className="props__pill" {...priorityPaint(row.value)}>
+      <select
+        id={id}
+        className="props__pill-select"
+        value={selected}
+        onChange={(event) => {
+          const picked = priorityFromChoice(event.target.value);
+          if (picked !== undefined) onChange(picked);
+        }}
+      >
+        {choices.map((choice) => (
+          <option key={choice.value} value={choice.value}>
+            {choice.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
 }
 
 function SelectEditor({ id, row, text, onChange }: EditorProps) {

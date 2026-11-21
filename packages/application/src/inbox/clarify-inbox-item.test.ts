@@ -229,6 +229,20 @@ describe('clarifyInboxItem', () => {
     );
   });
 
+  it('sets a priority in the same save, and takes it away again (#913)', async () => {
+    const v = vault(BASE);
+
+    await v.clarify(CALL, { status: 'next-action', priority: 1 });
+    expect(v.files.get(CALL)).toBe(
+      '---\ntype: task\nstatus: next-action\npriority: 1\n---\n\nAbout the loan.\n\n- [ ] find the letter\n',
+    );
+
+    await v.clarify(CALL, { priority: null });
+    expect(v.files.get(CALL)).toBe(
+      '---\ntype: task\nstatus: next-action\n---\n\nAbout the loan.\n\n- [ ] find the letter\n',
+    );
+  });
+
   it('refuses a project that cannot be filed under before anything is written', async () => {
     const v = vault(BASE);
 

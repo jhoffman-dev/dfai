@@ -4,6 +4,7 @@ import { declaresFocus, FOCUS_PROPERTY } from '../today/chosen.ts';
 import { FILED_UNDER, type BuiltInTypeFile } from '../types/para.ts';
 import type { ObjectType, PropertyDef } from '../types/property-def.ts';
 import { statusOf } from '../types/status-property.ts';
+import { PRIORITY_PROPERTY } from './task-priority.ts';
 import {
   FINISHED_TASK_STATUS,
   GTD_STATUSES,
@@ -49,15 +50,18 @@ const TASK_PROPERTIES: readonly PropertyDef[] = [
 ];
 
 /**
- * The Task type, as written into a vault that has none: GTD's keys, the day
- * it was chosen for (#108), and the keys a task made from a meeting's action
+ * The Task type, as written into a vault that has none: GTD's keys, its
+ * priority (#913), the day it was chosen for (#108), and the keys a task made from a meeting's action
  * item carries (#177). `focus` is not one of GTD's keys: a vault's own Task
  * type gains it on opening, as DFAI's shipped properties are added
  * (`SHIPPED_PROPERTIES`), so it never makes a vault already on GTD be offered
  * the move again. A vault's
  * own Task type is offered those with meeting post-processing's setup (#191),
  * not with the move to GTD, so a vault already on GTD is not offered the move
- * again for them.
+ * again for them. `priority` is not one of GTD's keys either, for the same
+ * reason, and a vault's own Task type is not given it: whether one written
+ * before it shipped gains it on opening, as `focus` did, is James's to say
+ * (#913), since that writes into a type file the vault already has.
  */
 export const TASK_TYPE_FILE: BuiltInTypeFile = {
   type: {
@@ -67,6 +71,7 @@ export const TASK_TYPE_FILE: BuiltInTypeFile = {
     properties: [
       GTD_STATUS_PROPERTY,
       ...TASK_PROPERTIES,
+      PRIORITY_PROPERTY,
       FOCUS_PROPERTY,
       ...MEETING_ITEM_TASK_PROPERTIES,
     ],
@@ -78,6 +83,7 @@ export const TASK_TYPE_FILE: BuiltInTypeFile = {
     'a captured task starts in the Inbox, and ticking one off moves it to the Archive with the day it was',
     'finished. A Waiting task may say who it waits on, or not; a deferred one stays out of Next actions until its day.',
     'Chosen for is the day it was chosen to be done on, from the Today page.',
+    'Priority is 1, the most urgent, to 4; a task with none leaves it out.',
     '',
   ].join('\n'),
 };
@@ -208,6 +214,21 @@ export const tasksStartInInbox = (types: readonly ObjectType[]): boolean =>
  */
 export const choosesForToday = (types: readonly ObjectType[]): boolean =>
   declaresFocus(taskTypeOf(types) ?? TASK_TYPE_FILE.type);
+
+/**
+ * Whether the vault's tasks are ranked 1 to 4 (#913): its Task type declares
+ * `priority` as a number, or does not declare it — as a vault with no Task
+ * type yet, which is given the built-in one. A type that declares it as any
+ * other kind (High to Low, say) keeps a priority of its own: then no pill and
+ * no P1–P4 picker are shown, and it is edited as that kind. Every surface that
+ * shows a priority reads this one rule.
+ */
+export function ranksTasks(types: readonly ObjectType[]): boolean {
+  const declared = taskTypeOf(types)?.properties.find(
+    (property) => property.key === TASK_KEYS.priority,
+  );
+  return declared === undefined || declared.kind === 'number';
+}
 
 /** The statuses a row may give a task, and where a note made a task starts. */
 export interface ClarifyVocabulary {

@@ -105,3 +105,67 @@ describe('compileViewQuery and the Archive, run against SQLite', () => {
     ).toEqual(['Archive/tasks/Done long ago.md', 'archive/By hand.md', 'tasks/Live.md']);
   });
 });
+
+describe('a sort over a view, run against SQLite: blanks last either way (#913)', () => {
+  const database = new DatabaseSync(':memory:');
+  database.exec('CREATE TABLE v_task (path TEXT, title TEXT, summary TEXT, priority REAL)');
+  const insert = database.prepare('INSERT INTO v_task VALUES (?, ?, ?, ?)');
+  for (const [path, priority] of [
+    ['none.md', null],
+    ['p3.md', 3],
+    ['p1.md', 1],
+    ['blank.md', ''],
+    ['p4.md', 4],
+    ['p2.md', 2],
+  ] as const) {
+    insert.run(path, path, '', priority);
+  }
+  const sorted = (direction: 'asc' | 'desc') => {
+    const { sql, parameters } = compileViewQuery({
+      ...tasks,
+      columns: ['priority'],
+      sorts: [{ key: 'priority', direction }],
+    });
+    return database
+      .prepare(sql)
+      .all(...parameters)
+      .map((row) => row['path']);
+  };
+
+  it('lists P1 first and the tasks with no priority after P4, ascending', () => {
+    expect(sorted('asc')).toEqual(['p1.md', 'p2.md', 'p3.md', 'p4.md', 'blank.md', 'none.md']);
+  });
+
+  it('keeps them last descending too, by path among themselves', () => {
+    expect(sorted('desc')).toEqual(['p4.md', 'p3.md', 'p2.md', 'p1.md', 'blank.md', 'none.md']);
+  });
+
+  it('sorts a number of the note’s own by its number, and words — no number — with none', () => {
+    const own = new DatabaseSync(':memory:');
+    own.exec('CREATE TABLE v_task (path TEXT, title TEXT, summary TEXT, priority REAL)');
+    const add = own.prepare('INSERT INTO v_task VALUES (?, ?, ?, ?)');
+    // A type view's number cell is the value's number: `high` has none, so its cell is NULL.
+    for (const [path, priority] of [
+      ['high.md', null],
+      ['p1.md', 1],
+      ['seven.md', 7],
+      ['zero.md', 0],
+      ['p4.md', 4],
+    ] as const) {
+      add.run(path, path, '', priority);
+    }
+    const order = (direction: 'asc' | 'desc') => {
+      const { sql, parameters } = compileViewQuery({
+        ...tasks,
+        columns: ['priority'],
+        sorts: [{ key: 'priority', direction }],
+      });
+      return own
+        .prepare(sql)
+        .all(...parameters)
+        .map((row) => row['path']);
+    };
+    expect(order('asc')).toEqual(['zero.md', 'p1.md', 'p4.md', 'seven.md', 'high.md']);
+    expect(order('desc')).toEqual(['seven.md', 'p4.md', 'p1.md', 'zero.md', 'high.md']);
+  });
+});

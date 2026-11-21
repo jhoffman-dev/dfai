@@ -8,9 +8,25 @@ import {
   type MarkdownPort,
   type VaultFsPort,
 } from '@dfai/application';
+import { ranksTasks, type ObjectType } from '@dfai/domain';
 import { readAgain, vaultReadKey } from '../reads/query-client.ts';
 
-const NO_TYPES: readonly DefinedType[] = [];
+/**
+ * What `useTypes` hands over while the vault's types are not read yet, or
+ * after a read that failed with none read before it: this list itself, never
+ * the vault's own empty list, so "not known yet" can be told from "none".
+ */
+export const TYPES_NOT_READ: readonly DefinedType[] = [];
+const NO_TYPES = TYPES_NOT_READ;
+
+/**
+ * Whether the vault's tasks are ranked 1 to 4 (`ranksTasks`, #913), as far as
+ * the window knows: never while its types are not read, so no pill and no
+ * P1–P4 picker shows over a `priority` its Task type may keep as another kind.
+ */
+export function ranksKnownTasks(types: readonly ObjectType[]): boolean {
+  return types !== TYPES_NOT_READ && ranksTasks(types);
+}
 const NONE_BROKEN: readonly BrokenType[] = [];
 
 /**

@@ -267,3 +267,72 @@ what needs attention but had nowhere to say what was chosen.
 - **The API chooses through `POST /v1/today/choose` `{ path, chosen }`**, on
   the app's clock, through the same write as a property change; MCP's
   `atlas_choose_for_today` calls it.
+
+## Addendum (#913, 2026-11-18; amended 2026-11-21 in review): a task's priority
+
+Slice 1 of the Todoist sync (#912). James: "Priority should be added."
+
+- **`priority` is a number, 1 to 4, and absent means none.** 1 is the most
+  urgent, as Todoist shows it to the person (P1 to P4). No priority is the
+  key left out, never a fifth value. A note that never had one is unchanged,
+  and one given a priority and then cleared is back byte for byte (ADR-0003).
+- **It is a soft field.** Whatever a note holds under `priority` is stored
+  exactly as written, by every write: a template, capture, the properties
+  panel, a table cell, a board, an automation, the API. No write is refused
+  or changed because of it, and no task rule reads it. Reading is what
+  decides:
+  - The integers 1 to 4 (and their digits as text) are a priority.
+  - Anything else (`7`, `high`, a list) reads as none: no pill. How it
+    sorts is said below.
+  - Why: a vault may already use `priority` its own way, and an outside
+    tool's sync must accept whatever is in the file rather than have the
+    vault refuse it.
+- **One rule says whether a vault ranks its tasks 1 to 4: `ranksTasks`.** It
+  is true when the Task type declares `priority` as a number or does not
+  declare it (a vault with no Task type is given the built-in one), and
+  false when the type declares it as another kind (High to Low, say).
+  - Today's rows, the Inbox's rows and Clarify read it.
+  - The properties panel reads it (the shell puts the editor on the row).
+  - A task table reads it.
+  - Until the vault's types are read, or after a read that failed, the
+    window treats the vault as not ranking its tasks: no pill and no picker,
+    so none is offered over a `priority` its Task type may keep as another
+    kind (`ranksKnownTasks` in the shell).
+  - Where it is false, none of this shows: no pill and no picker. The value
+    is edited as its kind.
+- **The pickers write one of the four or take the key out.** The properties
+  panel and Clarify offer None and P1 to P4. A value of the note's own is
+  shown as "Other: 7" and left as it is until the person picks something
+  else.
+- **It is shown as a pill, P1 to P4, and drawn not at all for none**: on
+  Today's rows, the Inbox's, and a task table's `priority` column. It reads
+  "Priority 1" to a screen reader, so its hue (red, orange, blue, gray) is
+  never the only signal.
+- **Sorting.** Sorted by Priority, tasks run P1 to P4 and the ones with no priority come last, in either direction. A value of the note's own sorts by its number where it is one (`0` before P1 and `7` after P4 ascending, the other way round descending) and with no priority where it is words (`high`). Blank cells now come last in both directions on every table column; on main, a missing value came first ascending. The change is the view's sort, which now puts blanks last as the query language's sort already did; plain SQLite, which a type table's sort used, puts NULL first ascending.
+- **The built-in Task type declares it**, after GTD's keys, so a new vault
+  has it. It is not one of GTD's keys, so a vault already on GTD is not
+  offered the move again for it.
+- **Existing vaults: James's decision.** There are three options:
+  - (a) Add it to `SHIPPED_PROPERTIES`, so an existing vault's Task type
+    gains it on opening, as `focus` did (#162). That writes once per vault,
+    never over a key the type has, and never again once the person takes it
+    off; two Macs' records merge. It does write into saved type files.
+  - (b) Leave it as it is. In an existing vault (priority undeclared):
+    - Today's and the Inbox's rows show the pill.
+    - The Inbox's Clarify offers the picker.
+    - A task that holds the key shows it in the properties panel as an
+      extra property, with the P1–P4 picker. One that lacks it can only be
+      given it by adding a property called `priority`.
+    - A task table has no Priority column until a Number `priority` is
+      added in Edit type.
+  - (c) Offer it, and add it only on a yes.
+
+  This slice does (b).
+
+- **The mapping to an outside tool is that tool's sync's.** Todoist's API
+  numbers priority the other way round (4 is the most urgent); turning one
+  into the other, and tolerating whatever the file holds, belongs to the
+  Todoist sync (#912), not to the vault.
+- **The API's shapes are not changed here.** The property routes write
+  `priority` as given, as they did. Its typed answers (Today, the review,
+  the Inbox) gain it with the API's slice of #912.

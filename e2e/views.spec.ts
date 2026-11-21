@@ -95,7 +95,7 @@ test('the SQL behind the view can be read', async ({ page }) => {
   await pageCommand(page, /^Show SQL/);
   const sql = page.locator('.page__sql');
   await expect(sql).toContainText('FROM "v_task"');
-  await expect(sql).toContainText('ORDER BY "phase" ASC');
+  await expect(sql).toContainText(`ORDER BY NULLIF("phase", '') ASC NULLS LAST`);
 });
 
 test('clicking a title opens that note', async ({ page }) => {

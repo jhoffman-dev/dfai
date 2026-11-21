@@ -5,7 +5,7 @@ import { createVaultPath } from '@dfai/domain';
 import { fakeVaultFs, type NoteFile } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { queryWrapper } from '../reads/query-wrapper.tsx';
-import { useTypes } from './use-types.ts';
+import { ranksKnownTasks, useTypes } from './use-types.ts';
 
 const typeFile = (label: string): NoteFile => ({
   path: '.atlas/types/task.md',
@@ -101,5 +101,52 @@ describe('useTypes', () => {
     expect(hook.result.current.broken.map(({ path }) => path)).toEqual(['.atlas/types/Recipe.md']);
     // A reload still settles with the types alone.
     expect((await hook.result.current.reload())?.map((type) => type.label)).toEqual(['Task']);
+  });
+});
+
+describe('ranksKnownTasks: the vault ranks its tasks 1 to 4, as far as the window knows (#913)', () => {
+  const taskType = (priority: string | null): NoteFile => ({
+    path: '.atlas/types/task.md',
+    text: `---\nname: task\nproperties:\n  status: text\n${priority === null ? '' : `  priority: ${priority}\n`}---\n`,
+    modified: 1,
+    size: 1,
+  });
+  const ranked = async (readNotes: () => Promise<NoteFile[]>) => {
+    const fs = fakeVaultFs({
+      listDirectory: async () => [
+        { kind: 'file', name: 'task.md', path: createVaultPath('.atlas/types/task.md') },
+      ],
+      readNotes,
+    });
+    const { wrapper } = queryWrapper();
+    const hook = renderHook(() => useTypes({ fs, markdown: remarkMarkdown, vaultKey: '/vault' }), {
+      wrapper,
+    });
+    return hook;
+  };
+
+  it('ranks them once read with priority undeclared', async () => {
+    const hook = await ranked(async () => [taskType(null)]);
+    await waitFor(() => expect(hook.result.current.types).toHaveLength(1));
+    expect(ranksKnownTasks(hook.result.current.types)).toBe(true);
+  });
+
+  it('does not once read with priority a select', async () => {
+    const hook = await ranked(async () => [taskType('select')]);
+    await waitFor(() => expect(hook.result.current.types).toHaveLength(1));
+    expect(ranksKnownTasks(hook.result.current.types)).toBe(false);
+  });
+
+  it('does not while the types are not read yet', async () => {
+    const hook = await ranked(() => new Promise(() => {}));
+    expect(ranksKnownTasks(hook.result.current.types)).toBe(false);
+  });
+
+  it('does not after a read that failed', async () => {
+    const hook = await ranked(async () => {
+      throw new Error('the disk is gone');
+    });
+    await waitFor(() => expect(hook.result.current.failure).not.toBeNull());
+    expect(ranksKnownTasks(hook.result.current.types)).toBe(false);
   });
 });
