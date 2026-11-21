@@ -32,7 +32,6 @@ import {
   runAutomation,
   runOnMissedArrivals,
   runOnNoteChanges,
-  ruleHeldByPlatform,
   undoLastRun,
   setAutomationEnabled,
   VaultChangedError,
@@ -50,6 +49,7 @@ import {
 } from '@dfai/application';
 import { errorMessage } from '../query/error-message.ts';
 import { useMeetingRelink } from './use-meeting-relink.ts';
+import { turnOf } from './automations-scheduled.ts';
 import type { PulledFilesGate } from '../sync/use-pulled-files.ts';
 
 /** How often the clock is checked for a rule that has come due, and the rules and logs read again. */
@@ -129,9 +129,11 @@ export interface AutomationsOptions {
   /** The vault owner's own addresses, its `selfEmails`, likewise. */
   readonly selfEmails?: readonly string[];
   /**
-   * What the platform offers (#657): a rule it cannot carry out — a Claude
-   * step with no Claude Code here — is held, saying why, instead of run and
-   * failed at every tick.
+   * What the platform offers with every feature on (#657): a rule it cannot
+   * carry out — a Claude step with no Claude Code here — is held, saying
+   * why, instead of run and failed at every tick. The platform's own, not the
+   * switches' (#920): a switch says whether rules run here, through
+   * `scheduled`, not whether this platform could run them.
    */
   readonly offered: EntryPointsOffered;
 }
@@ -288,34 +290,45 @@ export function useAutomations(options: AutomationsOptions) {
    * Runs a rule through the one door: a failure pauses it, as the clock's
    * backoff says; success clears that. One held for the next pull neither
    * failed nor ran: it settles with null, and `heldForPull` holds its id.
+   * One that set itself off, whose turn comes after this Mac stopped running
+   * the rules, settles with null and leaves no hold (`turnOf`, #920).
    */
   const forRule = useCallback(
     (
       rule: AutomationRule,
       carryOut: (vault: string) => Promise<LogEntry | null>,
-      options?: { wait?: boolean },
+      { wait, byHand }: { wait?: boolean; byHand: boolean },
     ) => {
-      const held = ruleHeldByPlatform(rule, offeredNow.current);
-      if (held !== null) {
-        hold(rule.id, held);
+      const turn = turnOf({
+        rule,
+        platform: offeredNow.current,
+        runsHere: runsHere.current === true,
+        byHand,
+      });
+      if (turn.kind === 'skip') return Promise.resolve(null);
+      if (turn.kind === 'hold') {
+        hold(rule.id, turn.reason);
         return Promise.resolve(null);
       }
-      return exclusive(async (vault) => {
-        heldForPull.current.delete(rule.id);
-        try {
-          const entry = await carryOut(vault);
-          // Run now that fails while Claude is out of reach leaves the pause, and its warning, as they are.
-          if (!(entry?.kind === 'failed' && isUnavailable(rule.id))) clearPause(rule.id);
-          return entry;
-        } catch (cause) {
-          if (cause instanceof HeldForPullError) {
-            heldForPull.current.add(rule.id);
-            return null;
+      return exclusive(
+        async (vault) => {
+          heldForPull.current.delete(rule.id);
+          try {
+            const entry = await carryOut(vault);
+            // Run now that fails while Claude is out of reach leaves the pause, and its warning, as they are.
+            if (!(entry?.kind === 'failed' && isUnavailable(rule.id))) clearPause(rule.id);
+            return entry;
+          } catch (cause) {
+            if (cause instanceof HeldForPullError) {
+              heldForPull.current.add(rule.id);
+              return null;
+            }
+            recordFailure(rule.id, cause);
+            throw cause;
           }
-          recordFailure(rule.id, cause);
-          throw cause;
-        }
-      }, options);
+        },
+        wait === undefined ? undefined : { wait },
+      );
     },
     [exclusive, clearPause, recordFailure, hold, isUnavailable],
   );
@@ -329,24 +342,25 @@ export function useAutomations(options: AutomationsOptions) {
     onSettled,
   });
   const runRule = useCallback(
-    (rule: AutomationRule, trigger: RunTrigger) => {
+    (rule: AutomationRule, trigger: RunTrigger) =>
       // The clock's rules run one after another: once this Mac stops running them (Automations
       // switched off, #901, or the vault's automations named elsewhere), the run under way
-      // finishes, its log written, and no rule after it starts. By hand, a rule still runs.
-      if (trigger !== 'hand' && !runsHere.current) return Promise.resolve(null);
-      return forRule(rule, (vault) =>
-        runAutomation({
-          ports,
-          rule,
-          clock: clockForRule({ rule, clock, planZone: planZoneNow.current }),
-          activity,
-          trigger,
-          guard: guardOf(vault),
-          freshPull: freshPullOf(vault),
-          relink: relinkIn(vault),
-        }),
-      );
-    },
+      // finishes, its log written, and no rule after it starts (`turnOf`). By hand, it still runs.
+      forRule(
+        rule,
+        (vault) =>
+          runAutomation({
+            ports,
+            rule,
+            clock: clockForRule({ rule, clock, planZone: planZoneNow.current }),
+            activity,
+            trigger,
+            guard: guardOf(vault),
+            freshPull: freshPullOf(vault),
+            relink: relinkIn(vault),
+          }),
+        { byHand: trigger === 'hand' },
+      ),
     [forRule, guardOf, ports, clock, activity, freshPullOf, relinkIn],
   );
   /**
@@ -380,7 +394,7 @@ export function useAutomations(options: AutomationsOptions) {
           throw cause;
         }
       };
-      await forRule(rule, carryOut, { wait: true });
+      await forRule(rule, carryOut, { wait: true, byHand: false });
       return !failed && !heldForPull.current.has(rule.id);
     },
     [forRule, guardOf, ports, clock, activity, runsHere, mayActOn, freshPullOf],

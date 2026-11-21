@@ -2633,7 +2633,8 @@ function AppWindow({
           selfEmails={ownerEmails}
           // A rule a note sets off hears of it here (P29-01).
           changes={noteChanges}
-          offered={offered}
+          // What this platform can carry out, which no switch changes (#920).
+          offered={platformOffered}
         />
         {/* Meetings that n8n commits arrive by pull: each is checked, deduplicated and marked (P28-04). */}
         <MeetingImportRunner
