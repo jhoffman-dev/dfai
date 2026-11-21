@@ -6,6 +6,7 @@ import { PROPS_TYPE_FOLD_INDEX } from '../types/note-type-sql.ts';
 import { compileAtlasQuery } from './compile.ts';
 import { parseAtlasQuery } from './parse.ts';
 import { QUERY_TEST_TYPES } from './query-fixtures.ts';
+import { compileViewQuery } from '../query/view-query.ts';
 import { typeViewSelectSql } from './type-view.ts';
 
 /**
@@ -70,21 +71,55 @@ describe('notes found by type, in any case, are sought by the fold index', () =>
   });
 });
 
-describe("a type's view is one pass over its notes", () => {
-  it('reads its cells in one grouped pass, with no subquery per cell', () => {
-    const select = typeViewSelectSql({
-      name: 'task',
-      columns: [
-        { key: 'status', kind: 'select', many: false },
-        { key: 'due', kind: 'date', many: false },
-        { key: 'estimate', kind: 'number', many: false },
-        { key: 'labels', kind: 'multiSelect', many: false },
-        { key: 'project', kind: 'relation', many: false },
-      ],
-      progress: true,
-    });
-    const plan = planOf(select ?? '');
-    expect(plan.some((step) => step.startsWith('CORRELATED'))).toBe(false);
+describe("a type's view reads each cell by its note and key (#919)", () => {
+  const TASK_VIEW = {
+    name: 'task',
+    columns: [
+      { key: 'status', kind: 'select', many: false },
+      { key: 'due', kind: 'date', many: false },
+      { key: 'estimate', kind: 'number', many: false },
+      { key: 'labels', kind: 'multiSelect', many: false },
+      { key: 'project', kind: 'relation', many: false },
+    ],
+    progress: true,
+  };
+
+  /** The plan of `sql` over an index holding the task view. */
+  function planOverView(sql: string, parameters: readonly unknown[]): string[] {
+    const database = new DatabaseSync(':memory:');
+    database.exec(SCHEMA);
+    database.exec(`CREATE VIEW "v_task" AS\n${typeViewSelectSql(TASK_VIEW) ?? ''}`);
+    return (
+      database.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...(parameters as never[])) as {
+        detail: string;
+      }[]
+    ).map((step) => step.detail);
+  }
+
+  it('seeks each cell through props_path by path and key, never a walk of every row', () => {
+    const plan = planOf(typeViewSelectSql(TASK_VIEW) ?? '');
+    const cells = plan.filter((step) =>
+      /^SEARCH p USING INDEX props_path \(path=\? AND key=\?\)/.test(step),
+    );
+    // title and the five columns; progress is the file's own.
+    expect(cells).toHaveLength(6);
+    expect(plan.some((step) => /^SCAN (p|props)\b|props_key/.test(step))).toBe(false);
     expect(plan.some((step) => /props_type_fold \(key=\? AND <expr>=\?/.test(step))).toBe(true);
+  });
+
+  it('flattens into the page that reads it, so a page reads every column only of its own notes', () => {
+    const { sql, parameters } = compileViewQuery({
+      type: 'task',
+      columns: ['status', 'due', 'estimate', 'labels', 'project'],
+      filters: [],
+      sorts: [{ key: 'due', direction: 'desc' }],
+      limit: 500,
+    });
+    const plan = planOverView(sql, parameters);
+    // A grouped view would be a co-routine run to its end before the page's ORDER BY.
+    expect(plan.some((step) => step.startsWith('CO-ROUTINE'))).toBe(false);
+    // The page's notes are chosen first, and the rows read are sought by path among them.
+    expect(plan.some((step) => /^LIST SUBQUERY/.test(step))).toBe(true);
+    expect(plan.some((step) => /^SCAN n\b/.test(step))).toBe(false);
   });
 });

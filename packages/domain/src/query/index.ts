@@ -44,6 +44,7 @@ export {
 } from './saved-view.ts';
 export type { ViewDisplay, ViewLayout } from './saved-view.ts';
 export { typeTableQuery } from './type-table.ts';
+export { failureWords, QUERY_STOPPED, QUERY_STOPPED_WORDS } from './query-stopped.ts';
 export { COLUMN_PREVIEW, columnPreview } from './column-preview.ts';
 export { groupTotals, tableArrangement } from './table-footer.ts';
 export type { TotalledGroup } from './table-footer.ts';

@@ -67,6 +67,26 @@ describe('POST /v1/views/{path}/run with DFAI queries (adversarial)', () => {
     expect(widgets[0]?.data).toMatchObject({ shape: 'grouped' });
   });
 
+  it("answers a widget the index stopped at its budget with the host's word, as before (#919)", async () => {
+    // The plain sentence is the app's to draw; the API keeps what the index said (v1.md).
+    const api = apiFixture({
+      markdown: jsonMarkdown(),
+      index: { query: () => Promise.reject('interrupted') },
+      files: {
+        '.atlas/types/task.md': jsonNote(TASK_TYPE),
+        '.atlas/dashboards/Home.md': jsonNote({
+          atlas: 'dashboard',
+          widgets: [{ kind: 'query', title: 'Open', query: 'FROM task WHERE status != done' }],
+        }),
+      },
+    });
+
+    const response = await run(api, '.atlas/dashboards/Home.md');
+
+    const widgets = bodyOf(response)['widgets'] as { data: unknown }[];
+    expect(widgets[0]?.data).toEqual({ shape: 'error', message: 'interrupted' });
+  });
+
   it('answers a query view whose text does not read with invalid, saying why', async () => {
     const api = apiFixture({
       markdown: jsonMarkdown(),

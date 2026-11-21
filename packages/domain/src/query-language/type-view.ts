@@ -25,9 +25,14 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * `type` in any case and spacing, and each column the value a `SHOW` of it
  * draws, by the same rules as `valueRowsSql`.
  *
- * It is one grouped pass over the notes' rows, a pivot, with no subquery per
- * cell: a type's table of thousands of notes reads as fast as a pivot of each
- * row's MAX did. TypeScript sends this text and the index (index.rs,
+ * Each cell is read by its own lookup of its note's rows of its key, through
+ * `props_path` (path, key, value_text), not by one grouped pass over every
+ * row of every note (#919). A grouped view cannot be flattened into the
+ * query that reads it, so the table's `ORDER BY … LIMIT 500` waited for every
+ * column of every note to be pivoted first: about 6,600 steps of SQLite's
+ * budget per meeting, and the Meeting table stopped at some 750 meetings.
+ * Plain cells flatten, so a query pays only for the cells it reads, of the
+ * notes it keeps. TypeScript sends this text and the index (index.rs,
  * `replace_views`) only runs it, so the rules live here alone. Names that are
  * not identifiers are left out.
  */
@@ -40,21 +45,27 @@ export function typeViewSelectSql(spec: TypeViewSpec): string | null {
     .join('');
   return [
     'SELECT n.path AS "path",',
-    `       COALESCE(MAX(CASE WHEN p.key = 'title' THEN p.value_text END), n.title) AS "title",`,
+    `       COALESCE(${cellSql('title', "MAX(CASE WHEN p.key = 'title' THEN p.value_text END)")}, n.title) AS "title",`,
     '       n.summary AS "summary",',
     `       n.modified AS "modified"${progress}${columns}`,
-    // Blank items are no items: left out once, as the rows are joined, not in every cell.
-    `FROM files AS n JOIN props AS p ON p.path = n.path AND ${HELD}`,
+    'FROM files AS n',
     `WHERE n.path IN (SELECT path FROM props WHERE key = 'type' AND ${foldedTypeSql('value_text')} = '${foldedTypeName(spec.name)}')`,
-    'GROUP BY n.path',
   ].join('\n');
 }
 
 /** A row that holds anything: a blank item is no item. */
 const HELD = "COALESCE(p.value_text, p.value_json, '') <> ''";
 
-/** A row of the column's key; the join has left out blank items already. */
+/** A row of the column's key; the lookup has left out blank items already. */
 const heldOf = (key: string) => `p.key = '${key}'`;
+
+/**
+ * One cell: `aggregate` over the note's rows of `key`, blank items left out,
+ * as the grouped pivot read it. Over no rows it is what the pivot's was:
+ * count 0, everything else null.
+ */
+const cellSql = (key: string, aggregate: string) =>
+  `(SELECT ${aggregate} FROM props AS p WHERE p.path = n.path AND p.key = '${key}' AND ${HELD})`;
 
 /**
  * The row first in written order, as 19 digits that sort by it: `idx`, then
@@ -63,8 +74,13 @@ const heldOf = (key: string) => `p.key = '${key}'`;
  */
 const ORDERED = '(p.idx * 4294967296 + p.rowid + 1000000000000000000)';
 
-/** One column's cell, as the query draws the field (`cellOf`), out of the grouped rows. */
+/** One column's cell, as the query draws the field (`cellOf`), out of its note's rows. */
 function columnSql(column: TypeViewColumn): string {
+  return cellSql(column.key, columnAggregate(column));
+}
+
+/** How a column's cell is made of its rows, by the same rules as `valueRowsSql`. */
+function columnAggregate(column: TypeViewColumn): string {
   const field = asField(column);
   const held = heldOf(column.key);
   const value = shownValue(field);

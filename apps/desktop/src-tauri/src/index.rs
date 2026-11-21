@@ -1288,6 +1288,9 @@ pub async fn index_stats(index: State<'_, SharedIndex>) -> Result<IndexStats, St
 }
 
 #[cfg(test)]
+mod type_table_budget_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
