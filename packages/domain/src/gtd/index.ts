@@ -56,12 +56,16 @@ export {
 export type { TaskPriority } from './task-priority.ts';
 export {
   compareDues,
+  datedDueOf,
+  dueAt,
   dueOf,
+  dueOnDay,
   dueOfDated,
   dueTimeOfDated,
   dueWithTime,
   isPastDue,
   isWallTime,
+  readsTaskDue,
   wallTimeOf,
   writtenDue,
 } from './task-due.ts';

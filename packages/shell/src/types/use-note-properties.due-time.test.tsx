@@ -31,6 +31,12 @@ describe('useNoteProperties: a task’s due row (#928)', () => {
     expect(editorOf([TASK], { type: 'Task', due: '2026-12-04T15:30' }, 'due')).toBe('dueTime');
   });
 
+  it('takes none on a due with no day to give a time to: empty, or words', () => {
+    expect(editorOf([TASK], { type: 'task', due: 'next Friday' }, 'due')).toBeUndefined();
+    expect(editorOf([TASK], { type: 'task', due: '' }, 'due')).toBeUndefined();
+    expect(editorOf([TASK], { type: 'task' }, 'due')).toBeUndefined();
+  });
+
   it('takes none on another date of a task', () => {
     expect(editorOf([TASK], { type: 'task', defer: '2026-12-04' }, 'defer')).toBeUndefined();
   });

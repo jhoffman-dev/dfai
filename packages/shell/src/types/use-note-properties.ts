@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  dueOf,
   humanizeKey,
   isTaskNote,
   notePropertyKind,
@@ -140,8 +141,10 @@ export function useNoteProperties({
       if (ranked && def.key === TASK_KEYS.priority) {
         return { def, editor: 'priority' as const, value, error: null };
       }
-      // A task's due is a date with an optional time of day (#928).
-      const takesTime = isTask && def.key === TASK_KEYS.due && def.kind === 'date';
+      // A task's due that holds a day takes an optional time of day (#928): one
+      // with none to give it to — empty, `next Friday` — would write nothing.
+      const takesTime =
+        isTask && def.key === TASK_KEYS.due && def.kind === 'date' && dueOf(value) !== null;
       return {
         def,
         value,

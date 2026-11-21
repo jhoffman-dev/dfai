@@ -53,13 +53,13 @@ const rowOf = (title: string) =>
 afterEach(() => cleanup());
 
 describe('an Inbox row, a due with a time (#928)', () => {
-  it('shows the time beside the due’s day, and none for a date-only due', () => {
+  it('says beside the due’s day that a new day keeps its time, and nothing for a date-only due', () => {
     page();
     const timed = rowOf('Call Mara Quill');
     expect(
       (timed.querySelector('input[aria-label="Call Mara Quill is due"]') as HTMLInputElement).value,
     ).toBe('2026-12-04');
-    expect(timed.querySelector('.due-time')?.textContent).toBe(' at 15:30');
+    expect(timed.querySelector('.due-time')?.textContent).toBe(' keeps 15:30');
     const plain = rowOf('Pay Larkspur Payroll');
     expect(plain.querySelector('input[aria-label="Pay Larkspur Payroll is due"]')).not.toBeNull();
     expect(plain.querySelector('.due-time')).toBeNull();

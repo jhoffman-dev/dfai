@@ -367,7 +367,8 @@ async function briefData(run: MeetingBriefsRun, day: string, meeting: DayMeeting
     try {
       const brief = await readBrief({
         reads: run.ports,
-        clock: run.ports.claude.clock,
+        // Overdue as of the wall clock the run started at (#928), as Today says it.
+        clock: { today: () => run.ports.claude.clock.today(), localNow: () => run.at },
         path,
         date: day,
       });

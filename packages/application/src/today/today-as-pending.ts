@@ -1,5 +1,7 @@
 import {
+  datedDueOf,
   laterChoiceOf,
+  reviewDueFields,
   taskAsRead,
   todayLists,
   TASK_KEYS,
@@ -93,13 +95,19 @@ function asChanged({
   if (changes === null) return task;
   const properties = {
     [TASK_KEYS.status]: task.status,
-    [TASK_KEYS.due]: task.due,
+    // As dated, its time included (#928): a roll drawn before it lands keeps the time.
+    [TASK_KEYS.due]: task.dueAt ?? task.due,
     [TASK_KEYS.defer]: task.defer,
     ...(task.focusIsOwn !== true && { [TASK_KEYS.focus]: task.focus ?? null }),
   };
   const after = taskAsRead({ ...properties, ...changes });
+  const { dueAt, dueTime, ...rest } = task;
+  const due = Object.hasOwn(changes, TASK_KEYS.due)
+    ? reviewDueFields(datedDueOf(changes[TASK_KEYS.due]))
+    : { ...(dueAt !== undefined && { dueAt }), ...(dueTime !== undefined && { dueTime }) };
   return {
-    ...task,
+    ...rest,
+    ...due,
     ...after,
     modified: newest + 1,
     waitingDays: after.status === 'waiting' ? 0 : null,

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   compareDues,
+  dueAt,
   dueOf,
+  dueOnDay,
   dueTimeOfDated,
   dueWithTime,
   isPastDue,
   isWallTime,
+  readsTaskDue,
   wallTimeOf,
   writtenDue,
   type TaskDue,
@@ -13,8 +16,8 @@ import {
 
 /** #928: a due is a day, or a day with a wall-clock time (ADR-0029's addendum). */
 const TODAY = '2026-12-04';
-const day = (on: string): TaskDue => ({ day: on, time: null });
-const at = (on: string, time: string): TaskDue => ({ day: on, time });
+const day = (on: string): TaskDue => dueAt(on, null);
+const at = (on: string, time: string): TaskDue => dueAt(on, time);
 
 describe('what a due is read as', () => {
   it('is its day, with no time, when it names only the day', () => {
@@ -27,9 +30,29 @@ describe('what a due is read as', () => {
   });
 
   it('reads seconds or a zone after the minutes as the same clock time, never converted', () => {
-    expect(dueOf('2026-12-04T15:30:59')).toEqual(at('2026-12-04', '15:30'));
-    expect(dueOf('2026-12-04T23:30Z')).toEqual(at('2026-12-04', '23:30'));
-    expect(dueOf('2026-12-04T00:15+09:00')).toEqual(at('2026-12-04', '00:15'));
+    expect(dueOf('2026-12-04T15:30:59')).toMatchObject({ day: '2026-12-04', time: '15:30' });
+    expect(dueOf('2026-12-04T23:30Z')).toMatchObject({ day: '2026-12-04', time: '23:30' });
+    expect(dueOf('2026-12-04T00:15+09:00')).toMatchObject({ day: '2026-12-04', time: '00:15' });
+  });
+
+  it('reads 24:00 as no time of day: the due is its day (attack-930)', () => {
+    expect(dueOf('2026-12-04T24:00')).toMatchObject({ day: '2026-12-04', time: null });
+  });
+
+  it('sorts by the text as dated, a space read as T: the key a table sorts by (attack-930)', () => {
+    expect(dueOf('2026-12-04 09:00:59')?.order).toBe('2026-12-04T09:00:59');
+    const dues = [
+      '2026-12-04T24:00',
+      '2026-12-04T09:00:59',
+      '2026-12-04T23:59',
+      '2026-12-04T09:00',
+    ];
+    expect(
+      dues
+        .map(dueOf)
+        .sort(compareDues)
+        .map((due) => due?.order),
+    ).toEqual(['2026-12-04T09:00', '2026-12-04T09:00:59', '2026-12-04T23:59', '2026-12-04T24:00']);
   });
 
   it('is no due for what the index does not date: words, an impossible day, nothing', () => {
@@ -150,6 +173,24 @@ describe('writing a due', () => {
   it('sets then clears back to the date-only text it started from', () => {
     const timed = dueWithTime('2026-12-04', '07:45');
     expect(dueWithTime(timed, null)).toBe('2026-12-04');
+  });
+
+  it('moves a due to another day keeping whatever followed its day, as written', () => {
+    expect(dueOnDay('2026-12-04', '2026-12-11')).toBe('2026-12-11');
+    expect(dueOnDay('2026-12-04T15:30', '2026-12-11')).toBe('2026-12-11T15:30');
+    expect(dueOnDay(' 2026-12-04 09:00:59 ', '2026-12-11')).toBe('2026-12-11 09:00:59');
+    expect(dueOnDay('2026-12-04T24:00', '2026-12-11')).toBe('2026-12-11T24:00');
+    expect(dueOnDay('2026-12-04T15:30Z', '2026-12-11')).toBe('2026-12-11T15:30Z');
+    expect(dueOnDay('next Friday', '2026-12-11')).toBe('2026-12-11');
+    expect(dueOnDay(['2026-12-04'], '2026-12-11')).toBe('2026-12-11');
+  });
+
+  it('reads a view dated by a task’s due as one the due rules decide', () => {
+    expect(readsTaskDue({ typeName: 'task', dateKey: 'due' })).toBe(true);
+    expect(readsTaskDue({ typeName: ' Task ', dateKey: 'due' })).toBe(true);
+    expect(readsTaskDue({ typeName: 'task', dateKey: 'defer' })).toBe(false);
+    expect(readsTaskDue({ typeName: 'invoice', dateKey: 'due' })).toBe(false);
+    expect(readsTaskDue({ typeName: null, dateKey: 'due' })).toBe(false);
   });
 
   it('gives no write for a value that holds no due', () => {

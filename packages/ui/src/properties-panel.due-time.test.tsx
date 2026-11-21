@@ -92,11 +92,6 @@ describe('the due’s time in the properties panel (#928)', () => {
     expect(onChange).toHaveBeenLastCalledWith('due', '2026-12-05T15:30');
   });
 
-  it('offers no time for an empty due, or a date that is not a task’s due', () => {
-    panel(dueRow(null));
-    expect(screen.queryByLabelText('Due time')).toBeNull();
-  });
-
   it('offers no time where the caller did not ask for one', () => {
     panel({ def: DUE, value: '2026-12-04', error: null });
     expect(screen.getByLabelText('Due')).toBeDefined();

@@ -152,7 +152,7 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     title: String(row['title'] ?? ''),
     status: gtdStatusOf(row['status']),
     due: textOrNull(row['due']),
-    ...timeOfDue(row['dueAt']),
+    ...reviewDueFields(row['dueAt']),
     defer: textOrNull(row['defer']),
     focus: textOrNull(row['focus']),
     focusIsOwn: Number(row['focusIsOwn']) === 1,
@@ -171,10 +171,14 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
   };
 }
 
-/** A due's time (#928), where it names one: a date-only due carries none. */
-function timeOfDue(dated: unknown): { dueTime?: string } {
+/**
+ * A due's time and its text as dated (#928), where it is more than its day:
+ * a date-only due carries neither.
+ */
+export function reviewDueFields(dated: unknown): { dueTime?: string; dueAt?: string } {
+  if (typeof dated !== 'string' || dated.length <= 10) return {};
   const time = dueTimeOfDated(dated);
-  return time === null ? {} : { dueTime: time };
+  return { dueAt: dated, ...(time !== null && { dueTime: time }) };
 }
 
 /** A row of {@link compileReviewProjectsQuery}, as the review reads it. */

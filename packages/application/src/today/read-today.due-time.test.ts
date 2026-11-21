@@ -80,6 +80,33 @@ describe('readToday, a due with a time (#928)', () => {
     expect(titles(drawn, 'overdue')).toEqual(['Write to Tobias Fenn', 'Call Mara Quill']);
   });
 
+  it('orders within a minute and at 24:00 as a table sorted by due does (attack-930)', async () => {
+    const files = {
+      'Tasks/Alder call.md': task('due: 2026-12-04T16:00:59'),
+      'Tasks/Birch call.md': task('due: 2026-12-04T16:00'),
+      'Tasks/Cedar close.md': task('due: 2026-12-04T24:00'),
+      'Tasks/Dogwood close.md': task('due: 2026-12-04T23:59'),
+    };
+    const index = fakeIndexPort({ query: atlasQueryIndex({ markdown: fakeMarkdown(), files }) });
+    const report = await readToday({
+      index,
+      fs: fakeVaultFs(),
+      markdown: fakeMarkdown(),
+      clock: clockAt('12:00'),
+    });
+    expect(titles(report, 'dueToday')).toEqual([
+      'Birch call',
+      'Alder call',
+      'Dogwood close',
+      'Cedar close',
+    ]);
+    // 24:00 is no time of day: it is shown and judged as its day.
+    const cedar = report.sections
+      .flatMap((section) => section.groups.flatMap((group) => group.tasks))
+      .find((item) => item.title === 'Cedar close');
+    expect(cedar?.dueTime).toBeUndefined();
+  });
+
   it('counts a timed due today whose time has passed as overdue in the weekly review', async () => {
     const review = await readWeeklyReview({ ...ports(), clock: clockAt('12:00') });
     expect(review.overdue.map((item) => item.title)).toEqual(['Write to Tobias Fenn']);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { reviewTask } from '../review/review-query.ts';
+import { createVaultPath } from '../vault/vault-path.ts';
 import { isOverdue } from '../review/weekly-review.ts';
 import { loopTask, type ItemContext } from './assistant-items.ts';
 import { linkingAmong } from './citation.ts';
@@ -13,10 +14,12 @@ const DAY = '2026-12-04';
 const PATH = 'Tasks/Call Mara Quill.md';
 
 const context: ItemContext = {
-  ...linkingAmong([PATH]),
+  ...linkingAmong([createVaultPath(PATH)]),
   sources: new Map(),
   hasBlock: () => false,
   day: DAY,
+  // The wall time asked at, which the context carries from the clock (#928).
+  time: '10:00',
 };
 
 describe('a timed due today whose time has passed (attack-930)', () => {

@@ -4,7 +4,14 @@ import {
   TASK_KEYS,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
-import { compareDues, isPastDue, type DueMoment, type TaskDue } from '../gtd/task-due.ts';
+import {
+  compareDues,
+  dueAt,
+  dueOfDated,
+  isPastDue,
+  type DueMoment,
+  type TaskDue,
+} from '../gtd/task-due.ts';
 import type { TaskPriority } from '../gtd/task-priority.ts';
 import { addDays } from '../timeline/timeline.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
@@ -22,6 +29,12 @@ export interface ReviewTask {
    * when the due names only its day, or the read did not say.
    */
   readonly dueTime?: string;
+  /**
+   * Its `due` as the index dates it (`value_date`), where that is more than
+   * its day — `2026-12-04T15:30`, `2026-12-04 09:00:59`: what the due rules
+   * read its time and its order from (#928). Absent for a date-only due.
+   */
+  readonly dueAt?: string;
   /** `YYYY-MM-DD`: the day it comes back into play; null when it is not deferred. */
   readonly defer: string | null;
   /**
@@ -222,9 +235,24 @@ export function isOverdue(task: ReviewTask, at: DueMoment): boolean {
   return due !== null && isPastDue(due, at) && promisesItsDay(task);
 }
 
+/**
+ * The next time of day one of `tasks` due today turns overdue, `HH:MM`, after
+ * the wall time `at` (#928): when a page left open must read again for it to
+ * move. Null when none will today.
+ */
+export function nextDueTurnAmong(tasks: readonly ReviewTask[], at: DueMoment): string | null {
+  const times = tasks
+    .filter((task) => task.due === at.today && promisesItsDay(task))
+    .flatMap((task) => dueOfTask(task)?.time ?? [])
+    .filter((time) => typeof at.time !== 'string' || time >= at.time);
+  return times.length === 0 ? null : times.reduce((first, time) => (time < first ? time : first));
+}
+
 /** A task's due as its read carried it: its day, and its time when it has one. */
-export function dueOfTask(task: Pick<ReviewTask, 'due' | 'dueTime'>): TaskDue | null {
-  return task.due === null ? null : { day: task.due, time: task.dueTime ?? null };
+export function dueOfTask(task: Pick<ReviewTask, 'due' | 'dueAt' | 'dueTime'>): TaskDue | null {
+  if (task.due === null) return null;
+  // As the index dated it where the read carried that; else its day and time.
+  return task.dueAt === undefined ? dueAt(task.due, task.dueTime ?? null) : dueOfDated(task.dueAt);
 }
 
 /** The earliest due first, a date-only due before the timed ones on its day; no due last. */

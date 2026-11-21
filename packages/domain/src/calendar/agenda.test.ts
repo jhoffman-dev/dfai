@@ -120,3 +120,41 @@ describe('an agenda at the last day a date can hold', () => {
     expect(agenda.days.map((day) => day.date)).toEqual(['9999-12-30', '9999-12-31']);
   });
 });
+
+describe('a calendar of tasks by their due: Overdue as Today says it (#928)', () => {
+  const tasks = events([
+    { title: 'nine', due: '2026-09-24T09:00' },
+    { title: 'three', due: '2026-09-24T15:00' },
+    { title: 'all day', due: '2026-09-24' },
+    { title: 'yesterday', due: '2026-09-23' },
+    { title: 'nine done', due: '2026-09-24T09:00', status: 'done' },
+  ]);
+  const agendaAt = (time: string | null) =>
+    buildAgenda({ events: tasks, from: TODAY, days: 1, today: TODAY, isDone, dues: { time } });
+
+  it('puts a timed due today in Overdue the minute after its time, and only then', () => {
+    expect(titles(agendaAt('09:00').overdue)).toEqual(['yesterday']);
+    expect(titles(agendaAt('09:01').overdue)).toEqual(['yesterday', 'nine']);
+    expect(titles(agendaAt('09:01').days[0]?.events ?? [])).toEqual([
+      'all day',
+      'nine done',
+      'three',
+    ]);
+  });
+
+  it('leaves a date-only due today under today all day, and a done one out of Overdue', () => {
+    expect(titles(agendaAt('23:59').overdue)).toEqual(['yesterday', 'nine', 'three']);
+  });
+
+  it('reads dues by their day where the time is not known, as any calendar does', () => {
+    expect(titles(agendaAt(null).overdue)).toEqual(['yesterday']);
+    const plain = buildAgenda({ events: tasks, from: TODAY, days: 1, today: TODAY, isDone });
+    expect(titles(plain.overdue)).toEqual(['yesterday']);
+  });
+
+  it('keeps the calendar’s own rule for a note with an end', () => {
+    const [block] = events([{ title: 'block', due: '2026-09-24T09:00', end: '2026-09-24T10:00' }]);
+    if (block === undefined) throw new Error('no event');
+    expect(isOverdue({ event: block, today: TODAY, isDone, dues: { time: '11:00' } })).toBe(false);
+  });
+});

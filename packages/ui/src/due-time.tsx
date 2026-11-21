@@ -8,3 +8,13 @@ import type { ReactNode } from 'react';
 export function dueTimeLabel(time: string): ReactNode {
   return <span className="due-time"> at {time}</span>;
 }
+
+/** A due's time beside a day field that keeps it (#928): "keeps 15:30". */
+export function dueTimeKept(time: string): ReactNode {
+  return (
+    <span className="due-time" title={`A new day keeps the time, ${time}`}>
+      {' '}
+      keeps {time}
+    </span>
+  );
+}

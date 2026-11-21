@@ -37,4 +37,4 @@ export {
 } from './event-move.ts';
 export type { EventWrite } from './event-move.ts';
 export { buildAgenda, isOverdue, relativeDay } from './agenda.ts';
-export type { Agenda, AgendaDay } from './agenda.ts';
+export type { Agenda, AgendaDay, AgendaDues } from './agenda.ts';

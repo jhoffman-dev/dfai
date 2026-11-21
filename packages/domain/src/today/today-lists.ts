@@ -2,6 +2,7 @@ import { FINISHED_TASK_STATUS, GTD_STATUSES, type GtdStatus } from '../gtd/gtd-s
 import {
   byDue,
   byOldestChange,
+  nextDueTurnAmong,
   byTitle,
   DAY_MS,
   isDeferred,
@@ -292,12 +293,8 @@ function byDueThenTitle(left: TodayTask, right: TodayTask): number {
  * again for the task to move. Null when none will today.
  */
 export function nextDueTurn(page: TodayLists, at: DueMoment): string | null {
-  const times = page.sections
-    .flatMap((section) => section.groups.flatMap((group) => group.tasks))
-    .filter((task) => task.due === at.today && task.dueTime !== undefined)
-    .map((task) => task.dueTime ?? '')
-    .filter((time) => typeof at.time !== 'string' || time >= at.time);
-  return times.length === 0 ? null : times.reduce((first, time) => (time < first ? time : first));
+  const tasks = page.sections.flatMap((section) => section.groups.flatMap((group) => group.tasks));
+  return nextDueTurnAmong(tasks, at);
 }
 
 /**

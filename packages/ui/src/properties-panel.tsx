@@ -278,7 +278,7 @@ function PropertyEditor({
       return (
         <>
           <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />
-          {row.editor === 'dueTime' && text !== '' && (
+          {row.editor === 'dueTime' && (
             <DueTimeEditor label={row.def.label} value={text} onChange={onChange} />
           )}
         </>

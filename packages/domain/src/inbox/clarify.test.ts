@@ -66,18 +66,25 @@ describe('clarifyPlan — a task', () => {
     });
   });
 
-  it('moves a timed due to the day picked, keeping its time of day (#928)', () => {
+  it('moves a timed due to the day an Inbox row picks, keeping its time of day (#928)', () => {
     const timed = { ...TASK, due: '2026-10-12T15:30' };
-    expect(plan({ due: '2026-10-20' }, { properties: timed })).toEqual({
+    const row = (due: string | null, properties: Record<string, unknown>) =>
+      plan({ due, keepsDueTime: true }, { properties });
+    expect(row('2026-10-20', timed)).toEqual({
       changes: { due: '2026-10-20T15:30' },
       fileUnder: null,
     });
     // Taken away, it is gone whole; on a date-only due the day is written as picked.
-    expect(plan({ due: null }, { properties: timed })).toEqual({
-      changes: { due: null },
+    expect(row(null, timed)).toEqual({ changes: { due: null }, fileUnder: null });
+    expect(row('2026-10-20', { ...TASK, due: '2026-10-12' })).toEqual({
+      changes: { due: '2026-10-20' },
       fileUnder: null,
     });
-    expect(plan({ due: '2026-10-20' }, { properties: { ...TASK, due: '2026-10-12' } })).toEqual({
+  });
+
+  it('writes the day a caller sends as that day alone, with no time it did not send (#928)', () => {
+    const timed = { ...TASK, due: '2026-10-12T15:30' };
+    expect(plan({ due: '2026-10-20' }, { properties: timed })).toEqual({
       changes: { due: '2026-10-20' },
       fileUnder: null,
     });

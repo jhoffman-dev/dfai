@@ -97,8 +97,9 @@ describe('compileReviewTasksQuery', () => {
         title: 'Quote',
         status: 'waiting',
         due: '2026-10-01',
-        // The time its due is written with (#928); `due` stays the day.
+        // The time its due is written with, and the due as dated (#928); `due` stays the day.
         dueTime: '09:00',
+        dueAt: '2026-10-01T09:00',
         focus: '2026-10-14',
         focusIsOwn: false,
         defer: '2026-10-20',

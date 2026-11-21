@@ -31,9 +31,12 @@ describe('repeatingTaskUpdate', () => {
     expect(update({ recurrence: 'monthly', due: '2027-01-31T08:05' })?.['due']).toBe(
       '2027-02-28T08:05',
     );
-    // Written with a space, it rolls to the time as the app writes one.
+    // Whatever followed the day is kept as written: never normalised by a roll (attack-930).
     expect(update({ recurrence: 'daily', due: '2026-12-31 23:59' })?.['due']).toBe(
-      '2027-01-01T23:59',
+      '2027-01-01 23:59',
+    );
+    expect(update({ recurrence: 'daily', due: '2026-12-04T24:00' })?.['due']).toBe(
+      '2026-12-05T24:00',
     );
   });
 
