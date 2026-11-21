@@ -89,12 +89,16 @@ describe('PATCH /v1/notes/{path}/properties on a task', () => {
     expect(api.files.get('Call.md')?.text).toBe(TASK);
   });
 
-  it('refuses a priority that is not 1 to 4 as invalid, and writes nothing (#913)', async () => {
-    const api = vault(GTD_TYPE, { 'Call.md': TASK });
-    const response = await patch(api, { priority: 'high' });
-    expect(response.status).toBe(400);
-    expect(bodyOf(response)).toMatchObject({ error: { code: 'invalid' } });
-    expect(api.files.get('Call.md')?.text).toBe(TASK);
+  it('writes any priority as given, as before DFAI had one: a soft field (#917 review)', async () => {
+    for (const [sent, line] of [
+      [5, 'priority: 5'],
+      ['high', 'priority: high'],
+      ['2', 'priority: 2'],
+    ] as const) {
+      const api = vault(GTD_TYPE, { 'Call.md': TASK });
+      expect((await patch(api, { priority: sent })).status).toBe(200);
+      expect(api.files.get('Call.md')?.text).toBe(TASK.replace('---\n\n', `${line}\n---\n\n`));
+    }
   });
 
   it('writes a priority of the vault’s own as given, where its Task type keeps priority as a select (#917 review)', async () => {

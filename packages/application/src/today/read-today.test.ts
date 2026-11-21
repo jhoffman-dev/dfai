@@ -124,13 +124,13 @@ describe('readToday', () => {
       ...FILES,
       'Tasks/Call the bank.md': task('status: next-action', 'priority: 2'),
     };
-    const priorityOf = async (ranking: boolean) => {
+    const priorityOf = async (ranksTasks: boolean) => {
       const report = await readToday({
         index: fakeIndexPort({ query: atlasQueryIndex({ markdown: fakeMarkdown(), files }) }),
         ...NO_PROPOSALS,
         clock: CLOCK,
         choosing: true,
-        ranking,
+        ranksTasks,
       });
       const tasks = report.sections.flatMap((section) => section.groups.flatMap((g) => g.tasks));
       return tasks.find((each) => each.title === 'Call the bank');

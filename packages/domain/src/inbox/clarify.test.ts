@@ -240,29 +240,22 @@ describe('clarifyPlan — who a task waits on, and a change of mind', () => {
 });
 
 describe('clarifyPlan and a task’s priority (#913)', () => {
-  const withType = (properties: Record<string, unknown>) =>
-    clarifyVocabulary([parseObjectType({ name: 'task', properties })]);
-  const plan = (clarification: Clarification, vocabulary = clarifyVocabulary([])) =>
+  const plan = (clarification: Clarification) =>
     clarifyPlan({
       path: path('Inbox/Call the bank.md'),
       properties: TASK,
       clarification,
       notePaths: NOTES,
       today: TODAY,
-      vocabulary,
     });
 
-  it('sets 1 to 4 and takes it away, in a vault that ranks its tasks', () => {
+  it('writes the priority picked in the same save, and takes it away', () => {
     expect(plan({ priority: 2 })).toMatchObject({ changes: { priority: 2 } });
     expect(plan({ priority: null })).toMatchObject({ changes: { priority: null } });
-    expect(plan({ priority: 7 })).toHaveProperty('refused');
   });
 
-  it('gives no 1-to-4 priority where the Task type keeps one of its own', () => {
-    const own = withType({ priority: { kind: 'select', options: ['High', 'Low'] } });
-    expect(own.ranks).toBe(false);
-    expect(plan({ priority: 1 }, own)).toHaveProperty('refused');
-    expect(withType({ priority: 'number' }).ranks).toBe(true);
+  it('refuses nothing for its priority: a soft field is written as given', () => {
+    expect(plan({ priority: 7 })).toMatchObject({ changes: { priority: 7 } });
   });
 });
 
@@ -285,7 +278,6 @@ describe('clarifyPlan — what the vault’s Task type lets a task be', () => {
     expect(clarifyVocabulary([OWN])).toEqual({
       statuses: ['backlog'],
       startsAt: null,
-      ranks: true,
     });
     expect(clarifyVocabulary([TASK_TYPE_FILE.type]).statuses).toHaveLength(8);
     expect(clarifyVocabulary([])).toMatchObject({ startsAt: 'inbox' });

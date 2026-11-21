@@ -233,6 +233,7 @@ describe('inboxItem — a task (#112)', () => {
       defer: '2026-10-20',
       due: null,
       priority: 1,
+      priorityWritten: '1',
     });
     // It lives outside the Inbox folder, so it arrived in none of its folders.
     expect(item.arrivedIn).toBe('');

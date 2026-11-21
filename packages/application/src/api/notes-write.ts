@@ -1,5 +1,4 @@
 import { appendToBody, joinFrontmatter, splitFrontmatter, type VaultPath } from '@dfai/domain';
-import { withTaskPriority } from '../gtd/task-rules.ts';
 import { setNoteProperties, type PropertyChanges } from '../query/set-property.ts';
 import { linkedTypeProblems } from '../types/linked-types.ts';
 import { loadObjectTypes, noteTypeName } from '../types/load-types.ts';
@@ -32,13 +31,8 @@ export async function setPropertiesRoute(request: VaultRequest): Promise<RouteRe
   const { text, modified } = await readNote(request, path);
   checkIfModified(path, modified, ifModified);
   await refuseLinksOfTheWrongType(request, { text, set });
-  const values = withTaskPriority({
-    types: await loadObjectTypes(request),
-    before: request.markdown.frontmatterProperties(splitFrontmatter(text).frontmatter),
-    changes: set,
-  });
 
-  await writeProperties(request, { path, expected: modified, values });
+  await writeProperties(request, { path, expected: modified, values: set });
   return answerWithNote(request, { path });
 }
 

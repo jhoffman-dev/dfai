@@ -243,17 +243,6 @@ describe('clarifyInboxItem', () => {
     );
   });
 
-  it('refuses a priority that is not 1 to 4 before anything is written (#913)', async () => {
-    for (const priority of [0, 5, 2.5]) {
-      const v = vault(BASE);
-      await expect(v.clarify(CALL, { status: 'next-action', priority })).rejects.toBeInstanceOf(
-        ClarifyRefusedError,
-      );
-      expect(v.files.get(CALL)).toBe(CAPTURED);
-      expect(v.writes).toEqual([]);
-    }
-  });
-
   it('refuses a project that cannot be filed under before anything is written', async () => {
     const v = vault(BASE);
 

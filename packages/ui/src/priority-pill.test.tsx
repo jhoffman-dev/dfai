@@ -114,7 +114,8 @@ describe('Today', () => {
   });
 });
 
-const inboxTask = (priority: TaskPriority | null | undefined): InboxItem => ({
+/** A task on an Inbox row; a priority given as text is one of the note's own, `high`. */
+const inboxTask = (priority: TaskPriority | string | null | undefined): InboxItem => ({
   path: createVaultPath('Inbox/Call Mara Quill.md'),
   title: 'Call Mara Quill',
   type: 'task',
@@ -128,7 +129,10 @@ const inboxTask = (priority: TaskPriority | null | undefined): InboxItem => ({
     waitingOnNames: '',
     defer: null,
     due: null,
-    ...(priority !== undefined && { priority }),
+    ...(priority !== undefined && {
+      priority: typeof priority === 'number' ? priority : null,
+      priorityWritten: priority === null ? null : String(priority),
+    }),
   },
 });
 
@@ -190,6 +194,34 @@ describe('the Inbox', () => {
     expect(screen.queryByRole('combobox', { name: 'Priority of Call Mara Quill' })).toBeNull();
   });
 
+  it('shows a value of the note’s own as "Other: high", and asks nothing of it until a pick', async () => {
+    const user = userEvent.setup();
+    const onClarify = inbox(inboxTask('high'));
+    const field = screen.getByRole('combobox', {
+      name: 'Priority of Call Mara Quill',
+    }) as HTMLSelectElement;
+    expect(field.selectedOptions[0]?.text).toBe('Other: high');
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.selectOptions(field, 'P2');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ clarification: { priority: 2 } }),
+    );
+  });
+
+  it('takes a value of the note’s own away when none is picked', async () => {
+    const user = userEvent.setup();
+    const onClarify = inbox(inboxTask('high'));
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Priority of Call Mara Quill' }),
+      'No priority',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ clarification: { priority: null } }),
+    );
+  });
+
   it('asks nothing of a priority left as it was', () => {
     inbox(inboxTask(2));
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
@@ -212,7 +244,7 @@ describe('the properties panel', () => {
     render(
       <PropertiesPanel
         typeName="task"
-        rows={[{ def: PRIORITY, value, error: null }]}
+        rows={[{ def: PRIORITY, value, error: null, editor: 'priority' }]}
         relationChoices={{}}
         onChange={onChange}
       />,
@@ -245,9 +277,26 @@ describe('the properties panel', () => {
     expect(onChange).toHaveBeenLastCalledWith('priority', null);
   });
 
-  it('still says what the file says when it holds something else', () => {
-    panel('high');
-    expect((screen.getByLabelText('Priority') as HTMLSelectElement).value).toBe('high');
+  it('shows a value of the note’s own as "Other: 7", chosen, and writes nothing until a pick', async () => {
+    const user = userEvent.setup();
+    const onChange = panel(7);
+    const field = screen.getByLabelText('Priority') as HTMLSelectElement;
+    expect(field.selectedOptions[0]?.text).toBe('Other: 7');
+    expect(onChange).not.toHaveBeenCalled();
+    await user.selectOptions(field, 'P3');
+    expect(onChange).toHaveBeenLastCalledWith('priority', 3);
+  });
+
+  it('is a number field where the caller does not say it is a task’s priority', () => {
+    render(
+      <PropertiesPanel
+        typeName="task"
+        rows={[{ def: PRIORITY, value: 2, error: null }]}
+        relationChoices={{}}
+        onChange={vi.fn()}
+      />,
+    );
+    expect((screen.getByLabelText('Priority') as HTMLInputElement).type).toBe('number');
   });
 });
 
