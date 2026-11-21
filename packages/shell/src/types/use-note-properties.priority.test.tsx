@@ -20,11 +20,17 @@ const links = {
 const note = (properties: Record<string, unknown>): OpenNote =>
   ({ path: createVaultPath('Tasks/Call.md'), properties }) as unknown as OpenNote;
 
+const index = fakeIndexPort();
+
 function editorOf(types: readonly ObjectType[], properties: Record<string, unknown>) {
-  const { result } = renderHook(() =>
-    useNoteProperties({ note: note(properties), types, index: fakeIndexPort(), links }),
+  // Made once, not on every render: a new note each render would read it again without end.
+  const open = note(properties);
+  const { result, unmount } = renderHook(() =>
+    useNoteProperties({ note: open, types, index, links }),
   );
-  return result.current.rows.find((row) => row.def.key === 'priority')?.editor;
+  const editor = result.current.rows.find((row) => row.def.key === 'priority')?.editor;
+  unmount();
+  return editor;
 }
 
 const task = (priority: unknown) =>
