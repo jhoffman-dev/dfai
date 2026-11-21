@@ -169,3 +169,79 @@ describe('a sort over a view, run against SQLite: blanks last either way (#913)'
     expect(order('desc')).toEqual(['seven.md', 'p4.md', 'p1.md', 'zero.md', 'high.md']);
   });
 });
+
+describe('a page of 500 across blanks, run against SQLite (#917 with #919)', () => {
+  // 1,200 tasks, 700 with no status (350 empty, 350 missing), inserted out of
+  // order; 500 statuses over 50 values, so ties are settled by path.
+  const database = new DatabaseSync(':memory:');
+  database.exec('CREATE TABLE v_task (path TEXT, title TEXT, summary TEXT, status TEXT)');
+  const insert = database.prepare('INSERT INTO v_task VALUES (?, ?, ?, ?)');
+  const statusOf = (at: number) => {
+    if (at < 500) return `s${String(at % 50).padStart(2, '0')}`;
+    return at % 2 === 0 ? '' : null;
+  };
+  for (let step = 0; step < 1_200; step += 1) {
+    const at = (step * 7) % 1_200;
+    const path = `tasks/t${String(at).padStart(4, '0')}.md`;
+    insert.run(path, path, '', statusOf(at));
+  }
+
+  const page = (direction: 'asc' | 'desc') => {
+    const { sql, parameters } = compileViewQuery({
+      ...tasks,
+      sorts: [{ key: 'status', direction }],
+      limit: 500,
+    });
+    // The page is chosen first, then read: the case an inner order that
+    // differed from the outer one would get wrong.
+    expect(sql).toContain('WHERE "path" IN (SELECT "path" FROM "v_task"');
+    return database
+      .prepare(sql)
+      .all(...parameters)
+      .map((row) => [row['path'], row['status']]);
+  };
+  const wholeView = (direction: 'asc' | 'desc') =>
+    database
+      .prepare(
+        `SELECT path, status FROM v_task ORDER BY NULLIF(status, '') ${direction} NULLS LAST, path ASC`,
+      )
+      .all()
+      .map((row) => [row['path'], row['status']]);
+  const expected = (direction: 'asc' | 'desc') => {
+    const valued = Array.from({ length: 500 }, (_, at) => [
+      `tasks/t${String(at).padStart(4, '0')}.md`,
+      statusOf(at),
+    ]);
+    const sign = direction === 'asc' ? 1 : -1;
+    return valued.sort(([pathA, a], [pathB, b]) =>
+      a === b
+        ? String(pathA).localeCompare(String(pathB))
+        : sign * String(a).localeCompare(String(b)),
+    );
+  };
+
+  for (const direction of ['asc', 'desc'] as const) {
+    it(`holds the 500 rows the whole view puts first, ${direction}: values in order, blanks after`, () => {
+      const rows = page(direction);
+      expect(rows).toHaveLength(500);
+      expect(rows).toEqual(wholeView(direction).slice(0, 500));
+      expect(rows).toEqual(expected(direction));
+    });
+  }
+
+  it('reaches the blanks, by path, when the page runs past the values', () => {
+    const { sql, parameters } = compileViewQuery({
+      ...tasks,
+      sorts: [{ key: 'status', direction: 'desc' }],
+      limit: 600,
+    });
+    const rows = database
+      .prepare(sql)
+      .all(...parameters)
+      .map((row) => [row['path'], row['status']]);
+    expect(rows).toEqual(wholeView('desc').slice(0, 600));
+    expect(rows.slice(500).map(([path]) => path)).toEqual(
+      Array.from({ length: 100 }, (_, at) => `tasks/t${String(500 + at).padStart(4, '0')}.md`),
+    );
+  });
+});
