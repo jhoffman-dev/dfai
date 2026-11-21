@@ -38,7 +38,9 @@ describe('the priority picker', () => {
   const other = (value: unknown) => priorityPicker(value).choices.at(-1)?.label;
 
   it('shows a list or a map of the note’s own as compact JSON, never "[object Object]"', () => {
-    expect(other([1, 2])).toBe('Other: [1,2]');
+    expect(other([1, 2])).toBe('Other: [1, 2]');
+    expect(priorityPicker([2]).choices).toHaveLength(5);
+    expect(priorityPicker([2]).selected).toBe('2');
     expect(other({ level: 'high' })).toBe('Other: {"level":"high"}');
     expect(other('  high ')).toBe('Other: high');
     expect(priorityPicker([1, 2]).selected).toBe('other');
@@ -310,12 +312,25 @@ describe('the properties panel', () => {
     expect(onChange).toHaveBeenLastCalledWith('priority', 3);
   });
 
-  it('picks over a list of the note’s own too, shown as "Other: [1,2]", with no alert', () => {
-    panel([1, 2]);
-    const field = screen.getByLabelText('Priority') as HTMLSelectElement;
-    expect(field.tagName).toBe('SELECT');
-    expect(field.selectedOptions[0]?.text).toBe('Other: [1,2]');
-    expect(screen.queryByRole('alert')).toBeNull();
+  it('picks over a list or a mapping of the note’s own too, with no alert', () => {
+    for (const [value, shown] of [
+      [[1, 2], 'Other: [1, 2]'],
+      [{ level: 'high' }, 'Other: {"level":"high"}'],
+    ] as const) {
+      const { unmount } = render(
+        <PropertiesPanel
+          typeName="task"
+          rows={[{ def: PRIORITY, value, error: null, editor: 'priority' }]}
+          relationChoices={{}}
+          onChange={vi.fn()}
+        />,
+      );
+      const field = screen.getByLabelText('Priority') as HTMLSelectElement;
+      expect(field.tagName).toBe('SELECT');
+      expect(field.selectedOptions[0]?.text).toBe(shown);
+      expect(screen.queryByRole('alert')).toBeNull();
+      unmount();
+    }
   });
 
   it('shows P3 for a task holding 3, with no alert', () => {

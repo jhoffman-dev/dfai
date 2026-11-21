@@ -228,6 +228,7 @@ export { ToastStack } from './toast-stack.tsx';
 export type { ToastShown } from './toast-stack.tsx';
 export { delayedSpinner, SPINNER_DELAY_MS } from './delayed-spinner.tsx';
 export { StatusPill } from './status-pill.tsx';
+export { priorityPicker, priorityPill } from './priority-pill.tsx';
 export { Key, KeyHints } from './key-hints.tsx';
 export { PeekDialog } from './peek/peek-dialog.tsx';
 export type { PeekDialogProps, PeekPosition } from './peek/peek-dialog.tsx';
