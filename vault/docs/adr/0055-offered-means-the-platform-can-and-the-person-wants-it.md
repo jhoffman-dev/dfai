@@ -128,10 +128,15 @@ rather than the platform. A second set of checks beside it would drift from it.
      already did). Nothing is killed or interrupted mid-write; the vault
      guard that stops a run when another vault opens is not used for this.
      **Switched on again**, the same runner carries on, as when this Mac
-     takes the automations over: its first read is taken as the vault
-     opening, so a rule that runs on opening runs then, and a schedule
-     missed while off runs once; after that the minute runs what is due, and
-     a note's news sets its rule off again. News about notes that changed while it was off is dropped. Arrivals that came in while it was off (for example meetings imported with Meetings still on) are caught up once when it is switched on, as they are when the app opens, within the usual hourly limits.
+     takes the automations over: a rule that runs on opening runs then, if
+     it has not already run this session (Automations off since the vault
+     opened; on, off and on again in one session does not run it twice),
+     and a schedule missed while off runs once; after that the minute runs
+     what is due, and a note's news sets its rule off again. News about
+     notes that changed while it was off is dropped. Arrivals that came in
+     while it was off (for example meetings imported with Meetings still
+     on) are caught up once when it is switched on, as they are when the
+     app opens, within the usual hourly limits.
    - **Meetings** (Granola, Calendar): `granolaSettings`, `granolaPull`,
      `meetingSync` (today's meetings read from Google Calendar as event
      notes, ADR-0046), a new `meetingSyncSettings` (Settings → Google
