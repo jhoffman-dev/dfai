@@ -185,6 +185,8 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
     `write_text_file ${CALL}`,
     'create_folder Tasks/YYYY',
     'create_folder Tasks/YYYY/MM',
+    // The move logged as about to happen, before it does (#911).
+    `write_text_file ${LOG}`,
     `move_entry ${CALL} -> ${FILED}`,
     `write_text_file ${FILED}`,
     // Mara linked under people.
@@ -199,10 +201,10 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   await expectAsSetUp(vault);
   // Moved back, its bytes written back, and one line added to the log.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
-  // Moved back, rewriting no link; its bytes written back; the undo logged. Nothing else.
+  // Its bytes written back where it is, then moved back rewriting no link; the undo logged. Nothing else.
   expect(writtenSince(host, beforeUndo)).toEqual([
+    `write_text_file ${FILED}`,
     `move_entry ${FILED} -> ${CALL}`,
-    `write_text_file ${CALL}`,
     `write_text_file ${LOG}`,
   ]);
 });
@@ -234,6 +236,8 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
     `write_text_file ${CALL}`,
     'create_folder Tasks/YYYY',
     'create_folder Tasks/YYYY/MM',
+    // The move logged as about to happen, before it does (#911).
+    `write_text_file ${LOG}`,
     `move_entry ${CALL} -> ${FILED}`,
     `write_text_file ${FILED}`,
     `write_text_file ${FILED}`,
@@ -241,6 +245,8 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
     // Lunch: begun; made a task; Tobias made, and logged at once; linked; closed.
     `write_text_file ${LOG}`,
     `write_text_file ${LUNCH}`,
+    // Tobias logged as about to be made, before he is.
+    `write_text_file ${LOG}`,
     `create_note ${TOBIAS}`,
     `write_text_file ${LOG}`,
     `write_text_file ${LUNCH}`,
@@ -250,6 +256,7 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
     `write_text_file ${RENEW}`,
     'create_folder Archive',
     'create_folder Archive/Inbox',
+    `write_text_file ${LOG}`,
     `move_entry ${RENEW} -> Archive/${RENEW}`,
     `write_text_file Archive/${RENEW}`,
     `write_text_file ${LOG}`,
@@ -261,17 +268,16 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
   await expect(lunch).toContainText('Put back as it was.');
   await expectAsSetUp(vault);
   expect(host.trashed()).toEqual([TOBIAS]);
-  // Each item moved back or written back, Tobias put in the Trash, a log line each.
-  // The last applied first, each moved or written back and logged; Tobias to the Trash.
+  // The last applied first: each written back, then moved back, and logged; Tobias to the Trash.
   expect(writtenSince(host, beforeUndo)).toEqual([
+    `write_text_file Archive/${RENEW}`,
     `move_entry Archive/${RENEW} -> ${RENEW}`,
-    `write_text_file ${RENEW}`,
     `write_text_file ${LOG}`,
     `write_text_file ${LUNCH}`,
     `trash_entry ${TOBIAS}`,
     `write_text_file ${LOG}`,
+    `write_text_file ${FILED}`,
     `move_entry ${FILED} -> ${CALL}`,
-    `write_text_file ${CALL}`,
     `write_text_file ${LOG}`,
   ]);
 });
