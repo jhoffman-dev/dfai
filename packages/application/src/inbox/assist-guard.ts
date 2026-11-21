@@ -1,4 +1,4 @@
-import { noteTitle, type AssistIntent, type VaultPath } from '@dfai/domain';
+import { digestOf, noteTitle, type AssistIntent, type VaultPath } from '@dfai/domain';
 import type { ArchivePorts } from '../archive/archive-notes.ts';
 import type { AsRead, VaultFsPort } from '../vault/ports.ts';
 
@@ -186,7 +186,13 @@ function guardedFs(inner: VaultFsPort, options: GuardOptions, record: Kept): Vau
       return read;
     },
     writeTextFile: async (write) => {
-      await mark({ doing: items.has(write.path) ? 'write' : 'relink', path: write.path });
+      const holds = known.get(write.path);
+      await mark({
+        doing: items.has(write.path) ? 'write' : 'relink',
+        path: write.path,
+        ...(holds !== undefined && { holding: digestOf(holds) }),
+        leaving: digestOf(write.contents),
+      });
       const now = await held(write.path);
       // The caller's own check stands: a text it read that is not what is there now is refused.
       if (write.expectedText !== undefined && write.expectedText !== now.text) {
@@ -205,7 +211,7 @@ function guardedFs(inner: VaultFsPort, options: GuardOptions, record: Kept): Vau
       return modified;
     },
     createNote: async (create) => {
-      await mark({ doing: 'create', path: create.path });
+      await mark({ doing: 'create', path: create.path, leaving: digestOf(create.contents) });
       // Exclusive: the host refuses a note that is already there.
       const modified = await inner.createNote(create);
       known.set(create.path, create.contents);

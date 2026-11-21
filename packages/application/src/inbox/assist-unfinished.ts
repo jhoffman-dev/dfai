@@ -104,45 +104,61 @@ async function leftOf(
         ? `${title} is at ${movedTo} now: what the row wrote may be in it. Check its properties, or move it back.`
         : itemLine(title, begun, textOf(begun.path)),
       ...made.map((person) => personLine(title, person, textOf(person.path))),
-      ...touched.flatMap((each) => touchedLine(title, each, textOf(each.path))),
+      ...touched.flatMap((about) => touchedLine(title, about, textOf(about.path))),
     ],
   };
 }
 
-/** The notes a row was about to write, make or trash, other than the item and anyone it is known to have made. */
+/** The notes a row was about to write, make or trash, other than the item and anyone it is known to have made: the latest intent each. */
 function touchedBy(
   intents: readonly AssistIntent[],
   item: VaultPath,
   made: readonly { path: VaultPath }[],
-): { path: VaultPath; doing: AssistIntent['doing'] }[] {
-  const seen = new Map<VaultPath, AssistIntent['doing']>();
+): Exclude<AssistIntent, { doing: 'move' }>[] {
+  const seen = new Map<VaultPath, Exclude<AssistIntent, { doing: 'move' }>>();
   for (const about of intents) {
     if (about.doing === 'move' || about.doing === 'folder' || about.path === item) continue;
     if (about.doing === 'create' && made.some((person) => person.path === about.path)) continue;
-    seen.set(about.path, about.doing);
+    seen.set(about.path, about);
   }
-  return [...seen].map(([path, doing]) => ({ path, doing }));
+  return [...seen.values()];
 }
 
+/** What is on disk of a note the row was about to write, make or trash, read against the mark's digests. */
 function touchedLine(
   title: string,
-  { path, doing }: { path: VaultPath; doing: AssistIntent['doing'] },
+  about: Exclude<AssistIntent, { doing: 'move' }>,
   text: string | null,
 ): string[] {
+  const { path, doing } = about;
   const name = noteTitle(path);
+  const now = text === null ? null : digestOf(text);
   if (doing === 'create') {
-    return text === null
-      ? []
-      : [
-          `${name} may have been made (${path}) just before it stopped, and was not recorded as made. Link it from ${title}, or put it in the Trash.`,
-        ];
+    if (now === null) return [];
+    if (about.leaving === undefined) {
+      return [
+        `${name} may have been made (${path}) just before it stopped, and was not recorded as made. Link it from ${title}, or put it in the Trash.`,
+      ];
+    }
+    return [
+      now === about.leaving
+        ? `${name} was made (${path}) just before it stopped, and is as made. Link it from ${title}, or put it in the Trash.`
+        : `${name} was made (${path}) just before it stopped, and has changed since. Keep it, or put it in the Trash.`,
+    ];
   }
   if (doing === 'trash') {
     return [
-      text === null
+      now === null
         ? `${name} (${path}) is in the Trash.`
         : `${name} (${path}) is still there: put it in the Trash if ${title} no longer links it.`,
     ];
+  }
+  if (now !== null && now === about.leaving) {
+    return [`${name} (${path}) was changed: its links to ${title} were rewritten. Check them.`];
+  }
+  if (now !== null && now === about.holding) return [`${name} (${path}) was not changed.`];
+  if (now !== null && about.leaving !== undefined) {
+    return [`${name} (${path}) has changed since: what the row wrote may not be in it. Check it.`];
   }
   return [`${name} (${path}) may have had its links to ${title} rewritten. Check them.`];
 }

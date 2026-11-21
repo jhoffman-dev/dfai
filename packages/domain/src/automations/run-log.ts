@@ -357,6 +357,10 @@ export type AssistIntent =
        */
       readonly doing: 'write' | 'relink' | 'create' | 'folder' | 'trash';
       readonly path: VaultPath;
+      /** The digest of what the note says as the write is held to it: what is there if it never landed. */
+      readonly holding?: string;
+      /** The digest of what the write leaves it saying: what is there if it landed. */
+      readonly leaving?: string;
     }
   | { readonly doing: 'move'; readonly path: VaultPath; readonly to: VaultPath };
 
@@ -693,8 +697,10 @@ function rowLines(entry: LoggedEntry): string[] {
 
 /** What a step says its row is about to do: `- about to move "from" → "to"`. */
 function intentLine(about: AssistIntent): string {
-  const to = about.doing === 'move' ? ` → ${code(about.to)}` : '';
-  return `- about to ${about.doing} ${code(about.path)}${to}`;
+  if (about.doing === 'move') return `- about to move ${code(about.path)} → ${code(about.to)}`;
+  const holding = about.holding === undefined ? '' : ` holding ${about.holding}`;
+  const leaving = about.leaving === undefined ? '' : ` leaving ${about.leaving}`;
+  return `- about to ${about.doing} ${code(about.path)}${holding}${leaving}`;
 }
 
 /** A new log's text, for the rule named. */
@@ -1050,7 +1056,7 @@ function parseSection(section: string): LoggedEntry | null {
 
 const ROW_LINE = new RegExp(`^- row ${JSON_SPAN}$`);
 const INTENT_LINE = new RegExp(
-  `^- about to (write|relink|create|folder|trash|move) ${JSON_SPAN}(?: → ${JSON_SPAN})?$`,
+  `^- about to (write|relink|create|folder|trash|move) ${JSON_SPAN}(?: → ${JSON_SPAN})?(?: holding ([0-9a-f]{8}))?(?: leaving ([0-9a-f]{8}))?$`,
 );
 
 /** What a step says its row was about to do; null for none, or a line that does not read. */
@@ -1062,7 +1068,12 @@ function intentOf(body: readonly string[]): AssistIntent | null {
       const path = pathOf(match[2]!);
       if (match[1] === 'move')
         return match[3] === undefined ? null : { doing: 'move', path, to: pathOf(match[3]) };
-      return { doing: match[1] as Exclude<AssistIntent['doing'], 'move'>, path };
+      return {
+        doing: match[1] as Exclude<AssistIntent['doing'], 'move'>,
+        path,
+        ...(match[4] !== undefined && { holding: match[4] }),
+        ...(match[5] !== undefined && { leaving: match[5] }),
+      };
     } catch {
       // A line edited into a path that is no path names nothing, on purpose.
       return null;
