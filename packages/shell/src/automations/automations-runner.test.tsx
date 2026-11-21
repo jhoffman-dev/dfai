@@ -412,6 +412,45 @@ describe('the Automations switch (#901)', () => {
     expect(relay.clock.forVault(VAULT)?.watchingSince).toBe(watching);
   });
 
+  it('lets the news of a note changed while off go: switched on, it sets nothing off', async () => {
+    const tidy = rule('Sweep').replace('when: a task is created', 'when: a task is changed');
+    const vault = memoryVault({ [RULE]: tidy, [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo } = mountRunner(vault);
+    await settle();
+    const changed = () => ({
+      vault: VAULT,
+      changes: [
+        {
+          kind: 'changed' as const,
+          path: TASK,
+          type: 'task',
+          digest: digestOf(vault.files[TASK] ?? ''),
+          before: 'a',
+        },
+      ],
+    });
+
+    await switchTo(OFF);
+    await settle();
+    vault.files[TASK] = '---\ntype: task\n---\n\nEdited while off.\n';
+    act(() => changes.publish(changed()));
+    await settle();
+    await switchTo(ON);
+    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+    });
+    await settle();
+    expect(archived(vault.files)).toBe(false);
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+
+    // The control: the same news heard while on sets the rule off.
+    vault.files[TASK] = '---\ntype: task\n---\n\nEdited while on.\n';
+    act(() => changes.publish(changed()));
+    await settle();
+    expect(archived(vault.files)).toBe(true);
+  });
+
   it('lets the run under way finish, its log written, and starts no rule after it', async () => {
     const files: Record<string, string> = {
       '.atlas/automations/A sweep.md': openRule('A sweep'),

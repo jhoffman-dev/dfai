@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import {
   appendLogEntry,
+  CLAUDE_NOTES_PER_RUN,
   createVaultPath,
   digestOf,
   logPathFor,
@@ -16,6 +17,7 @@ import {
 } from '@dfai/domain';
 import {
   NEEDS_THE_DESKTOP_APP,
+  createNoteChanges,
   entryPointsOffered,
   EVERY_ENTRY_POINT,
   fakeClaudeStepPorts,
@@ -27,6 +29,7 @@ import {
   type EntryPointsOffered,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
+import { switchedScheduled } from './automations-scheduled.ts';
 import {
   HELD_NEWS,
   queueByRule,
@@ -1120,5 +1123,93 @@ describe('useAutomations: a Claude step the status calls ready but whose ask is 
 
     expect(claude.fake.requests).toHaveLength(1);
     expect(hook.result.current.pauses.size).toBe(0);
+  });
+});
+
+describe('useAutomations: what happened while Automations was switched off (#901)', () => {
+  const ASK_RULE = '.atlas/automations/After a meeting.md';
+  const ASK_RULE_TEXT = [
+    '---',
+    'atlas: automation',
+    'name: After a meeting',
+    'enabled: true',
+    'when: a meeting is created',
+    'which: FROM meeting',
+    'do: claude',
+    'prompt: .atlas/prompts/after.md',
+    'output: proposals',
+    '---',
+    '',
+  ].join('\n');
+  const ARRIVALS = CLAUDE_NOTES_PER_RUN + 2;
+  const arrival = (n: number) =>
+    `Inbox/Meetings/2026-10-${String(n + 10).padStart(2, '0')} Call ${n}.md`;
+
+  it('drops the news heard while off, and catches up once on the arrivals, within the cap', async () => {
+    const modified: Record<string, number> = { [ASK_RULE]: 100, [MEETING]: 50 };
+    const vault = memoryVault(
+      {
+        [ASK_RULE]: ASK_RULE_TEXT,
+        '.atlas/prompts/after.md': 'Summarise the meeting.\n',
+        [MEETING]: LET_IN,
+      },
+      modified,
+    );
+    const claude = fakeClaudeStepPorts();
+    const changes = createNoteChanges({ onError: (cause) => void cause });
+    // As the runner hands it: on, and this Mac the one named for the vault's automations.
+    const scheduledWith = (enabled: boolean) =>
+      switchedScheduled({ enabled, featuresKnown: true, scheduled: true });
+    const options: AutomationsOptions = {
+      offered: EVERY_ENTRY_POINT,
+      ports: { ...vault.ports, claude },
+      clock,
+      vaultKey: VAULT,
+      indexKey: '1',
+      indexReady: true,
+      activity: recordingActivity(),
+      onSettled: vi.fn(),
+      changes,
+      scheduled: scheduledWith(true),
+      pulledFiles: { standing: { kind: 'not-synced' }, acts: async () => true },
+    };
+    const hook = renderHook((props: AutomationsOptions) => useAutomations(props), {
+      initialProps: options,
+    });
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
+
+    hook.rerender({ ...options, scheduled: scheduledWith(false) });
+    await settle();
+    // While off: meetings are let in, and the feed's news of each reaches the runner.
+    for (let n = 0; n < ARRIVALS; n += 1) {
+      vault.files[arrival(n)] = LET_IN;
+      modified[arrival(n)] = 200 + n;
+      act(() =>
+        changes.publish({
+          vault: VAULT,
+          changes: [{ kind: 'added', path: arrival(n), type: 'meeting', digest: digestOf(LET_IN) }],
+        }),
+      );
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(2 * SCHEDULE_TICK_MS));
+    await settle();
+    expect(claude.fake.requests).toHaveLength(0);
+
+    hook.rerender({
+      ...options,
+      ports: { ...vault.ports, claude },
+      scheduled: scheduledWith(true),
+    });
+    await settle();
+    // One catch-up pass over the arrivals, the news heard while off let go: one Claude run,
+    // reading no more than one run takes.
+    expect(claude.fake.requests).toHaveLength(1);
+    const asked = JSON.stringify(claude.fake.requests[0]);
+    const read = Array.from({ length: ARRIVALS }, (_, n) => arrival(n)).filter((path) =>
+      asked.includes(path.slice(path.lastIndexOf('/') + 1, -3)),
+    );
+    expect(read.length).toBeGreaterThan(0);
+    expect(read.length).toBeLessThanOrEqual(CLAUDE_NOTES_PER_RUN);
   });
 });
