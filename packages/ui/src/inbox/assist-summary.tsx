@@ -85,6 +85,10 @@ export function AssistSummary({
         </h3>
         {unfinished.length > 0 && <Unfinished rows={unfinished} onPutAside={onPutAside} />}
         <AssistBody view={view} actions={actions} />
+        {/* There before any row is, so that rows left unfinished are announced as they appear. */}
+        <p className="visually-hidden" aria-live="polite" data-live="unfinished">
+          {unfinishedSaid(unfinished.length)}
+        </p>
       </div>
       <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>
         Dismiss
@@ -94,6 +98,11 @@ export function AssistSummary({
 }
 
 /** What an apply a crash cut short left, row by row, for the person to put right: nothing here repairs it. */
+const unfinishedSaid = (count: number) =>
+  count === 0
+    ? ''
+    : `${count} ${count === 1 ? 'row' : 'rows'} left unfinished by an earlier apply or undo.`;
+
 function Unfinished({
   rows,
   onPutAside,
@@ -110,6 +119,11 @@ function Unfinished({
           An earlier apply or undo stopped part-way. Nothing was put right.
         </span>
       </p>
+      {onPutAside !== undefined && (
+        <p className="inbox-assist__note">
+          Put aside changes no note: it only stops showing that row here.
+        </p>
+      )}
       <ul className="inbox-assist__rows">
         {rows.map((row) => (
           <li
@@ -129,6 +143,7 @@ function Unfinished({
               <button
                 type="button"
                 className="btn btn--ghost btn--sm"
+                aria-label={`Put aside ${row.title}`}
                 onClick={() => onPutAside(row.row)}
               >
                 Put aside

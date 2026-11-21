@@ -262,9 +262,11 @@ describe('Apply on the suggestions', () => {
 
   it('says, in a live region there before it, that rows were left unfinished', () => {
     const view = plan([]);
-    const { rerender } = render(<AssistSummary view={view} onDismiss={() => undefined} />);
-    const live = screen.getByRole('status', { name: 'Left unfinished' });
-    expect(live.textContent).toBe('');
+    const { container, rerender } = render(
+      <AssistSummary view={view} onDismiss={() => undefined} />,
+    );
+    const live = container.querySelector('[data-live="unfinished"][aria-live="polite"]');
+    expect(live?.textContent).toBe('');
     rerender(
       <AssistSummary
         view={view}
@@ -275,8 +277,8 @@ describe('Apply on the suggestions', () => {
       />,
     );
     // The same region, so it is announced as it changes.
-    expect(screen.getByRole('status', { name: 'Left unfinished' })).toBe(live);
-    expect(live.textContent).toBe('1 row left unfinished by an earlier apply or undo.');
+    expect(container.querySelector('[data-live="unfinished"][aria-live="polite"]')).toBe(live);
+    expect(live?.textContent).toBe('1 row left unfinished by an earlier apply or undo.');
   });
 });
 
