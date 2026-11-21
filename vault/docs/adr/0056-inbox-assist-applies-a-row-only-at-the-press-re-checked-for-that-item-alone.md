@@ -137,38 +137,52 @@ no `created`, and the kept task is, by the title rule, not in the Inbox.
 
 ### What it writes, and how it is undone
 
-Every write goes through a use-case the Inbox already uses by hand. Nothing
-under `packages/adapters` changes, and there is no new port.
+Every write goes through a use-case the Inbox already uses by hand, handed
+the ports of **one guarded path** (`assist-guard.ts`, #911) and nothing else:
+those use-cases are unchanged from the Inbox's own. Nothing under
+`packages/adapters` changes, and there is no new port.
 
-| What                                              | Through                                                                                                                                                                        | Undo                                                                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| Make it a task, its due date                      | `clarifyInboxItem`: one byte-preserving save                                                                                                                                   | The item's whole text put back                                                                            |
-| File it under its project                         | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                                                                                                 | Moved back to exactly where it was, rewriting no link; its text put back                                  |
-| Other notes' links to it, rewritten by the filing | the filing's link update, each note recorded with its text before and after                                                                                                    | Each put back byte for byte; refused, naming the note, once it says anything else                         |
-| Link its people                                   | `setNoteProperties` on the item                                                                                                                                                | Part of the item's text put back                                                                          |
-| Add a person                                      | `createPerson`, with their address as the item spells it, then the link above                                                                                                  | Put in the system Trash, only while byte for byte as made and no other note links them; otherwise refused |
-| Archive a duplicate                               | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes` (a numbered name when the Archive has its name)                                                                | Moved back from the Archive to exactly where it was, rewriting no link; its text put back                 |
-| Log marks and entries                             | `appendToRuleLog`, rule id `inbox-assist`: `begun` before a row's first write, `step` after each person made, then a closing entry (`run`, `failed` or `undo`, naming the row) | —                                                                                                         |
-| One Activity line per apply and undo              | the Activity log, outside the vault                                                                                                                                            | —                                                                                                         |
+| What                                              | Through                                                                                                                                                                                                                                                               | Undo                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Make it a task, its due date                      | `clarifyInboxItem`: one byte-preserving save                                                                                                                                                                                                                          | The item's whole text put back                                                                            |
+| File it under its project                         | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                                                                                                                                                                                        | Moved back to exactly where it was, rewriting no link; its text put back                                  |
+| Other notes' links to it, rewritten by the filing | the filing's link update, each note recorded with its text before and after                                                                                                                                                                                           | Each put back byte for byte; refused, naming the note, once it says anything else                         |
+| Link its people                                   | `setNoteProperties` on the item                                                                                                                                                                                                                                       | Part of the item's text put back                                                                          |
+| Add a person                                      | `createPerson`, with their address as the item spells it, then the link above                                                                                                                                                                                         | Put in the system Trash, only while byte for byte as made and no other note links them; otherwise refused |
+| Archive a duplicate                               | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes` (a numbered name when the Archive has its name)                                                                                                                                                       | Moved back from the Archive to exactly where it was, rewriting no link; its text put back                 |
+| Log marks and entries                             | `appendToRuleLog`, rule id `inbox-assist`: `begun` before a row's first write (and before an undo's), a `step` before every write and after each person made, then a closing entry (`run`, `failed` or `undo`, naming the row), or `dismissed` when put aside by hand | —                                                                                                         |
+| One Activity line per apply and undo              | the Activity log, outside the vault                                                                                                                                                                                                                                   | —                                                                                                         |
 
-Every write on the item is held to the exact text the row checked or last
-left, and refuses before it writes: Clarify is handed that text
-(`expectedText`) and refuses a note that says anything else before planning
-anything; each later write passes it as `ifText` to `setNoteProperties`; the
-stamp the filing or the Archive writes where the note lands is held to the
-text the row wrote just before the move (an optional `expectedTexts` on the
-Archive's batch, #911), so an edit made while the note moved is never stamped
-over and never taken for what the row wrote; and the host's own save is held
-to the digest of what was read. For every write, the row's record of what the
-note says after it is exactly the text it checked plus its own change, never
-anything read later. Never-overwrite does not rest on a rollback.
+Every write of an apply, of its rollback and of an undo goes through that
+one guarded path, which for each write, before it is made: (1) logs a `step`
+naming what it is about to do and the path (`write`, `relink`, `create`,
+`folder`, `move`, `trash`), and waits for the log — a log that cannot be
+written stops the row with nothing more written; (2) holds the write to the
+exact text the row knows the note says — the text it first read of it when
+planning, or last wrote into it itself — reading it again and refusing any
+other text before writing, and handing that text to the host
+(`expectedText`), which refuses it too if it changed in between, within the
+disk's timestamp tick as well. A note the row never read is not written. A
+create is exclusive; a move and a trash are held to their source's text,
+read just before. (3) records it: each note's text before the row first wrote
+it and after its last write, each note made, where each moved. Typing a pane
+has not saved is never saved from it, and the duplicate's kept task is never
+written. That covers the item's own self-link and every other note's links a
+filing rewrites. For every write, the row's record of what a note says after
+it is exactly what it held the note to plus its own change, never anything
+read later. Never-overwrite does not rest on a rollback.
 
 A row is applied whole or not at all. An edit landing as the note moves stops
 the row: the note goes back where it was **with the edit kept**, and the row
 says that what it wrote before the edit is still in it. Its writes are recorded as they land;
 a write that fails takes back every write before it, item first and then any
 person it added, and says so ("Tobias Fenn was added, then taken out again").
-What could not be taken back is left, logged as a failed entry, and said.
+When the edit is the item's, anyone the row made is still taken out, and
+named. A rollback that stops part-way is not closed: its last `step` says what
+was put back and the digests on disk, the row stays under **Left
+unfinished**, and its Undo stays on offer to finish it, as an undo that
+stopped. A rollback refused at its first write says what is left as the row
+changed it.
 
 Undo is one exact undo per row (`exact-undo.ts`; the Inbox's by-hand undo is
 untouched). It reads everything first and refuses, touching nothing, when the
@@ -181,8 +195,12 @@ note its filing rewrote its text back, then the item's text where it is,
 then moves it back rewriting no link — so every byte of every note is as it
 was. Refused at its first write, nothing was touched. Stopped later, it says
 **Partly undone** with what is left ("Week still links to Notes/2026/Call
-Mara.md."), logs an undo entry with it, keeps Undo on offer, and undoing again
-finishes from where it stopped. **Undo all** takes the rows back the last
+Mara.md."), as a warning in Activity too, logs a `step` with what it put back
+(and the item's digest), leaves the row open, keeps Undo on offer, and undoing
+again finishes from where it stopped — a note this undo already put back is
+never checked or touched again, whatever it says since (the log says which,
+across a restart). An undo logs `begun` before its first write, a `step`
+before each, and a closing `undo` entry. **Undo all** takes the rows back the last
 applied first, each on its own. "Apply all" checks for an abort between rows:
 put away, it finishes the row it is on and starts no other.
 
@@ -207,7 +225,9 @@ put away, it finishes the row it is on and starts no other.
   lost with the crash. The before-bytes are not in the log: the item is in
   the vault, and synced, and the digest says whether it is still that text.
   Suggest waits while this window writes rows, and never shows them as left
-  unfinished.
+  unfinished. A row stays under **Left unfinished** until it is finished or the
+  person presses **Put aside**, which logs a `dismissed` mark and changes no
+  note. Trimming a long log never drops the marks of a row still open.
 - Two Macs: the log syncs, so Mac B can see Mac A's `begun` mark with no
   closing entry while A is mid-apply, or after A crashed. B shows it under
   **Left unfinished** as any other; the advice is to finish or put it right
@@ -215,7 +235,8 @@ put away, it finishes the row it is on and starts no other.
   say which Mac began it: the vault's settings name the automations Mac, not
   every Mac, so "started on <Mac>" waits for a name each Mac has.
 - What the checks see: a person's links (the added-person check, and link
-  rewriting) are wiki links only — a markdown link
+  rewriting) and the links undo checks it would break (read once per Undo
+  all, through the wiki link reader) are wiki links only — a markdown link
   (`[x](../People/Tobias%20Fenn.md)`) is not seen. An item path is taken only
   as the vault spells it: `inbox/Payroll article.md` on a disk that ignores
   case is refused, not applied under a name the vault does not have.

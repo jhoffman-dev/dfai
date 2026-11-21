@@ -104,6 +104,21 @@ const dated = (path: string) =>
  * the paths it names. Any command that is neither a read, a vault write nor a
  * named follow-up fails the test.
  */
+/**
+ * The writes to notes, in order, once each is seen logged just before it is
+ * made (#911): every write of a row goes through the one guarded path, which
+ * logs what it is about to do and waits for the log. The log's own writes and
+ * folders are dropped from what is returned.
+ */
+function notesWritten(writes: readonly string[]): string[] {
+  const ofTheLog = (write: string) => write.includes(' .atlas/');
+  writes.forEach((write, at) => {
+    if (!ofTheLog(write))
+      expect(writes[at - 1], `${write} logged first`).toBe(`write_text_file ${LOG}`);
+  });
+  return writes.filter((write) => !ofTheLog(write));
+}
+
 function writtenSince(host: Host, before: ReturnType<typeof mark>): string[] {
   const now = host.commandCounts();
   const called = [...now]
@@ -176,23 +191,23 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   // Its fields in one write; filed: a move, then its project linked where it lands; its people
   // linked in a third write; the log made, in its folder.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist applied “Call Mara Quill”');
-  expect(writtenSince(host, before)).toEqual([
-    // The log's folders and the log itself, with the row begun, before anything else.
+  const applying = writtenSince(host, before);
+  // The log made, in its folders, with the row begun, before anything else; closed after everything.
+  expect(applying.slice(0, 3)).toEqual([
     'create_folder .atlas/automations',
     'create_folder .atlas/automations/log',
     `create_note ${LOG}`,
+  ]);
+  expect(applying.at(-1)).toBe(`write_text_file ${LOG}`);
+  expect(notesWritten(applying)).toEqual([
     // Made a task, its due date written; filed into its home and its project linked there.
     `write_text_file ${CALL}`,
     'create_folder Tasks/YYYY',
     'create_folder Tasks/YYYY/MM',
-    // The move logged as about to happen, before it does (#911).
-    `write_text_file ${LOG}`,
     `move_entry ${CALL} -> ${FILED}`,
     `write_text_file ${FILED}`,
     // Mara linked under people.
     `write_text_file ${FILED}`,
-    // The row closed in the log.
-    `write_text_file ${LOG}`,
   ]);
 
   const beforeUndo = mark(host);
@@ -202,10 +217,11 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   // Moved back, its bytes written back, and one line added to the log.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
   // Its bytes written back where it is, then moved back rewriting no link; the undo logged. Nothing else.
-  expect(writtenSince(host, beforeUndo)).toEqual([
+  const undoing = writtenSince(host, beforeUndo);
+  expect(undoing.at(-1)).toBe(`write_text_file ${LOG}`);
+  expect(notesWritten(undoing)).toEqual([
     `write_text_file ${FILED}`,
     `move_entry ${FILED} -> ${CALL}`,
-    `write_text_file ${LOG}`,
   ]);
 });
 
@@ -232,38 +248,26 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
   // Call Mara: three writes and a move, as above. Tobias's item: made a task, then he is made and
   // linked. The duplicate: its stamp, then archived (a move and the Archive's stamp). The log: made
   // once, then added to twice.
-  expect(writtenSince(host, before)).toEqual([
+  const applying = writtenSince(host, before);
+  expect(applying.at(-1)).toBe(`write_text_file ${LOG}`);
+  expect(notesWritten(applying)).toEqual([
     // Call Mara, as above.
-    'create_folder .atlas/automations',
-    'create_folder .atlas/automations/log',
-    `create_note ${LOG}`,
     `write_text_file ${CALL}`,
     'create_folder Tasks/YYYY',
     'create_folder Tasks/YYYY/MM',
-    // The move logged as about to happen, before it does (#911).
-    `write_text_file ${LOG}`,
     `move_entry ${CALL} -> ${FILED}`,
     `write_text_file ${FILED}`,
     `write_text_file ${FILED}`,
-    `write_text_file ${LOG}`,
-    // Lunch: begun; made a task; Tobias made, and logged at once; linked; closed.
-    `write_text_file ${LOG}`,
+    // Lunch: made a task; Tobias made; linked.
     `write_text_file ${LUNCH}`,
-    // Tobias logged as about to be made, before he is.
-    `write_text_file ${LOG}`,
     `create_note ${TOBIAS}`,
-    `write_text_file ${LOG}`,
     `write_text_file ${LUNCH}`,
-    `write_text_file ${LOG}`,
-    // The duplicate: begun; stamped; archived (its folders, the move, the Archive's stamp); closed.
-    `write_text_file ${LOG}`,
+    // The duplicate: stamped; archived (its folders, the move, the Archive's stamp).
     `write_text_file ${RENEW}`,
     'create_folder Archive',
     'create_folder Archive/Inbox',
-    `write_text_file ${LOG}`,
     `move_entry ${RENEW} -> Archive/${RENEW}`,
     `write_text_file Archive/${RENEW}`,
-    `write_text_file ${LOG}`,
   ]);
 
   const beforeUndo = mark(host);
@@ -278,16 +282,15 @@ test('applies all sure rows, skipping the question, then undoes all, every byte 
   await expectAsSetUp(vault);
   expect(host.trashed()).toEqual([TOBIAS]);
   // The last applied first: each written back, then moved back, and logged; Tobias to the Trash.
-  expect(writtenSince(host, beforeUndo)).toEqual([
+  const undoing = writtenSince(host, beforeUndo);
+  expect(undoing.at(-1)).toBe(`write_text_file ${LOG}`);
+  expect(notesWritten(undoing)).toEqual([
     `write_text_file Archive/${RENEW}`,
     `move_entry Archive/${RENEW} -> ${RENEW}`,
-    `write_text_file ${LOG}`,
     `write_text_file ${LUNCH}`,
     `trash_entry ${TOBIAS}`,
-    `write_text_file ${LOG}`,
     `write_text_file ${FILED}`,
     `move_entry ${FILED} -> ${CALL}`,
-    `write_text_file ${LOG}`,
   ]);
 });
 
