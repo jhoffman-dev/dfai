@@ -15,6 +15,7 @@ import {
   type ProviderStatus,
   type Toolboxes,
   type VaultFsPort,
+  type WorkSwitch,
 } from '@dfai/application';
 import { chatModelOrDefault, type ProfileState, type VaultPath } from '@dfai/domain';
 import type { ChatDraft, ChatProblemView, ChatSkillsView } from '@dfai/ui';
@@ -125,7 +126,7 @@ export function useChat({
    * context, and a turn under way is stopped; the conversation and the draft
    * are kept for when it is on again.
    */
-  enabled: boolean;
+  enabled: WorkSwitch;
 }): ChatController {
   const open = seat.open && enabled;
   const [draftText, setDraftText] = useState('');

@@ -7,7 +7,7 @@ import {
   type KindleSyncRecord,
   type KindleSyncReport,
 } from '@dfai/domain';
-import { fakeIndexPort, fakeVaultFs, type KindleSync } from '@dfai/application';
+import { fakeIndexPort, fakeVaultFs, type KindleSync, workSwitch } from '@dfai/application';
 import { useKindleSync, type KindleHost, type KindleWindowOptions } from './use-kindle-sync.ts';
 
 /*
@@ -64,7 +64,7 @@ function optionsFor(kindle: KindleHost, enabled: boolean): KindleWindowOptions {
     vaultKey: VAULT,
     indexReady: true,
     onWrote: () => {},
-    enabled,
+    enabled: workSwitch(enabled),
   };
 }
 

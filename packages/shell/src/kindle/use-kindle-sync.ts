@@ -14,6 +14,7 @@ import {
   type MarkdownPort,
   type Rng,
   type VaultFsPort,
+  type WorkSwitch,
 } from '@dfai/application';
 import { useSteadyCallback, type KindleBusy, type KindleView } from '@dfai/ui';
 import { errorMessage } from '../query/error-message.ts';
@@ -57,7 +58,7 @@ export interface KindleWindowOptions {
    * Reading switched off (#901), nothing syncs, by itself or on asking, until
    * it is on again.
    */
-  readonly enabled: boolean;
+  readonly enabled: WorkSwitch;
 }
 
 export interface KindleController {

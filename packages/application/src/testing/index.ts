@@ -50,6 +50,7 @@ export type {
   KindleSinkWrite,
 } from './fake-kindle.ts';
 export { fakeClaudeStepPorts } from './fake-claude-step.ts';
+export { workSwitch } from './work-switch.ts';
 export {
   CONFLICT_BLOBS,
   failed,

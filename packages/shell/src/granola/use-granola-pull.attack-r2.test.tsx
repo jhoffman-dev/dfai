@@ -10,6 +10,7 @@ import {
   type GranolaKeyStatus,
   type GranolaPullRecord,
   type GranolaPullRecords,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { settles } from '@dfai/ui/testing/settles';
@@ -53,7 +54,8 @@ function held<T>() {
 function setUp(overrides: Partial<GranolaPullOptions> = {}) {
   const granola = fakeGranola();
   const options: GranolaPullOptions = {
-    enabled: true,
+    reachable: true,
+    enabled: workSwitch(true),
     granola: granola.port,
     records: memoryRecords(),
     fs: vaultWith(),

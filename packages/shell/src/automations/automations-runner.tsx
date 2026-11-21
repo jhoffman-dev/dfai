@@ -1,11 +1,11 @@
 import { memo, useEffect, useLayoutEffect } from 'react';
-import { AUTOMATIONS_SCOPE } from '@dfai/application';
+import { AUTOMATIONS_SCOPE, type WorkSwitch } from '@dfai/application';
 import type { IndexStatusStore } from '../index/index-status-store.ts';
 import { useScopedIndexKey } from '../reads/use-scoped-index-key.ts';
 import type { AutomationRelay } from '../api/automation-relay.ts';
 import { useAutomations, type AutomationsOptions } from './use-automations.ts';
 import { publishAutomations, type AutomationsStore } from './automations-store.ts';
-import { automationsScheduled } from './automations-scheduled.ts';
+import { automationsScheduled, switchedScheduled } from './automations-scheduled.ts';
 import { useSyncForRunners, type SyncStore } from '../sync/sync-store.ts';
 
 export type AutomationsRunnerProps = Omit<
@@ -25,6 +25,13 @@ export type AutomationsRunnerProps = Omit<
   readonly status: IndexStatusStore;
   /** What the API's automations routes read: when the runner began watching, and its pauses. */
   readonly relay: AutomationRelay;
+  /**
+   * Whether Automations is switched on (#901, `working.automationsRunner`):
+   * held off until the vault's settings have answered.
+   */
+  readonly enabled: WorkSwitch;
+  /** Whether the vault's settings have answered, so `enabled` off means switched off. */
+  readonly featuresKnown: boolean;
 };
 
 /**
@@ -34,6 +41,10 @@ export type AutomationsRunnerProps = Omit<
  * hears every sync's news of that note (`changes`), as it always has. The
  * list is read again for the index's news of the rules and their logs alone
  * (`AUTOMATIONS_SCOPE`), and only while the page is shown (`live`).
+ *
+ * With Automations switched off it stays drawn, as on a Mac that does not run
+ * the vault's automations: the clock and notes set off no rule, while the
+ * rules and their logs are still read, so a run already made can be undone.
  */
 export const AutomationsRunner = memo(function AutomationsRunner({
   store,
@@ -41,6 +52,8 @@ export const AutomationsRunner = memo(function AutomationsRunner({
   relay,
   sync,
   ownerKnown,
+  enabled,
+  featuresKnown,
   ...options
 }: AutomationsRunnerProps) {
   const { automationsHere, macKnown, pulledFiles } = useSyncForRunners(sync, options.vaultKey);
@@ -54,8 +67,13 @@ export const AutomationsRunner = memo(function AutomationsRunner({
   const automations = useAutomations({
     ...options,
     indexKey: rulesKey,
-    // A synced vault runs its automations on one Mac only (U-29), once it and the owner are known.
-    scheduled: automationsScheduled({ automationsHere, macKnown, ownerKnown }),
+    // A synced vault runs its automations on one Mac only (U-29), once it and the owner are known;
+    // switched off (#901), on none.
+    scheduled: switchedScheduled({
+      enabled,
+      featuresKnown,
+      scheduled: automationsScheduled({ automationsHere, macKnown, ownerKnown }),
+    }),
     // Its Claude step runs only on fresh sync state (ADR-0035 part 4).
     pulledFiles,
   });

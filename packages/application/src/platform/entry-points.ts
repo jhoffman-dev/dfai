@@ -34,6 +34,8 @@ const NEEDS = {
   googleCalendarSettings: ['googleCalendar'],
   /** Today's meetings read from the calendar, on their own clock. */
   meetingSync: ['googleCalendar'],
+  /** Settings → Google Calendar's meetings: their switch, calendars and Sync now. */
+  meetingSyncSettings: ['googleCalendar'],
   /** Time blocks written to and read from their calendar, on their own clock. */
   blockSync: ['googleCalendar'],
   /** Settings → Granola. */
@@ -109,6 +111,15 @@ const NEEDS = {
   addDocuments: [],
   /** The graph: its sidebar row, its page, and a note's Show in graph. */
   graphPage: [],
+  /** The Automations page and its sidebar row: the rules, their editor, Run now, dry runs and presets. */
+  automationsPage: [],
+  /**
+   * The rules run by themselves: on their schedule, on opening the vault and
+   * on a note's news, with the prompts refreshed and the rules taken in.
+   */
+  automationsRunner: [],
+  /** Meetings that arrive by pull, checked, deduplicated and marked (P28-04), on the automations Mac. */
+  meetingImport: [],
 } as const satisfies Record<string, readonly PlatformCapability[]>;
 
 export type EntryPoint = keyof typeof NEEDS;
@@ -119,17 +130,20 @@ export type EntryPoint = keyof typeof NEEDS;
  * platform can, and the person wants it. Every entry point says, so a new one
  * cannot be left out by accident; null follows the platform alone.
  */
-const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
+const FEATURE_OF = {
   connectionsSettings: null,
   localApiServer: null,
   globalCaptureSettings: null,
   globalCaptureShortcut: null,
   secretsSettings: null,
+  // Settings → Google Calendar holds the sign-in that time blocks share (ADR-0030):
+  // only its meetings part is Meetings', and block sync follows the platform alone.
   googleCalendarSettings: null,
-  meetingSync: null,
+  meetingSync: 'meetings',
+  meetingSyncSettings: 'meetings',
   blockSync: null,
-  granolaSettings: null,
-  granolaPull: null,
+  granolaSettings: 'meetings',
+  granolaPull: 'meetings',
   slackSettings: 'slack',
   slackLinkOffer: 'slack',
   kindleSettings: 'kindle',
@@ -140,9 +154,10 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   claudeSettings: null,
   claudeChat: 'ask',
   chatWork: 'ask',
+  // Suggest is the Inbox's, not a rule's: it stays with Automations off, as with Ask off.
   inboxSuggest: null,
   skillDraft: null,
-  claudeAutomations: null,
+  claudeAutomations: 'automations',
   syncSettings: null,
   syncLight: null,
   backgroundSync: null,
@@ -161,22 +176,64 @@ const FEATURE_OF: Readonly<Record<EntryPoint, FeatureId | null>> = {
   documentReader: 'reading',
   addDocuments: 'reading',
   graphPage: 'graph',
-};
+  automationsPage: 'automations',
+  automationsRunner: 'automations',
+  meetingImport: 'meetings',
+} as const satisfies Readonly<Record<EntryPoint, FeatureId | null>>;
+
+/** The entry points a switch in Settings → Features can take away. */
+type SwitchableEntry = {
+  [Entry in EntryPoint]: (typeof FEATURE_OF)[Entry] extends null ? never : Entry;
+}[EntryPoint];
 
 /**
- * The entry points of a switchable feature that start work by themselves — a
- * runner, a timer, a listener, a call to the network — rather than draw
- * something (#901). Until the vault's settings have answered, its off list
- * is not known, so these are held (`workOffered`): a feature the file
- * switches off never starts, and one it leaves on starts once the answer is
- * in. Rows, commands, pages and Settings sections are not held, so the
- * chrome shows at once. A new runner of a switchable feature goes here.
+ * What each entry point of a switchable feature is (#901): `'draws'` — a row,
+ * a command, a page, a Settings section — or `'work'`, which starts by itself:
+ * a runner, a timer, a listener, a call to the network. Every one says, so an
+ * entry point given a feature in `FEATURE_OF` does not compile until it is
+ * classified here, and a runner cannot be left out of the settings wait by
+ * forgetting it.
+ *
+ * Until the vault's settings have answered, the off list is not known, so
+ * the work is held (`workOffered`): a feature the file switches off never
+ * starts, and one it leaves on starts once the answer is in. What draws is
+ * not held, so the chrome shows at once.
  */
-export const STARTS_WORK: ReadonlySet<EntryPoint> = new Set<EntryPoint>([
-  'kindleSync',
-  'slackLinkOffer',
-  'chatWork',
-]);
+const KIND_OF = {
+  slackSettings: 'draws',
+  slackLinkOffer: 'work',
+  kindleSettings: 'draws',
+  kindleCommands: 'draws',
+  kindleSync: 'work',
+  claudeChat: 'draws',
+  chatWork: 'work',
+  libraryPages: 'draws',
+  documentReader: 'draws',
+  addDocuments: 'draws',
+  graphPage: 'draws',
+  // The editor's Ask Claude, the meeting set-up's offer and the presets with a Claude step:
+  // what runs them is `automationsRunner`.
+  claudeAutomations: 'draws',
+  automationsPage: 'draws',
+  automationsRunner: 'work',
+  meetingSyncSettings: 'draws',
+  meetingSync: 'work',
+  granolaSettings: 'draws',
+  granolaPull: 'work',
+  meetingImport: 'work',
+} as const satisfies Readonly<Record<SwitchableEntry, 'draws' | 'work'>>;
+
+/** The entry points of a switchable feature that start work by themselves, which wait for the settings. */
+export type WorkEntry = {
+  [Entry in SwitchableEntry]: (typeof KIND_OF)[Entry] extends 'work' ? Entry : never;
+}[SwitchableEntry];
+
+/** The work entry points, held until the vault's settings answer: built from `KIND_OF`, never by hand. */
+export const STARTS_WORK: ReadonlySet<WorkEntry> = new Set(
+  (Object.keys(KIND_OF) as SwitchableEntry[]).filter(
+    (entry): entry is WorkEntry => KIND_OF[entry] === 'work',
+  ),
+);
 
 /**
  * The entry point each page a switch can hide is drawn under, by the page's
@@ -188,10 +245,29 @@ const PAGE_ENTRY: Partial<Record<PagePlace['kind'], EntryPoint>> = {
   document: 'documentReader',
   ask: 'claudeChat',
   graph: 'graphPage',
+  automations: 'automationsPage',
 };
 
 /** Whether the screen offers each entry point. Every one is named, so none is forgotten. */
 export type EntryPointsOffered = Readonly<Record<EntryPoint, boolean>>;
+
+declare const WORK_SWITCH: unique symbol;
+
+/**
+ * Whether one piece of work of a switchable feature may start, as only
+ * `workOffered` hands it out (#920): a boolean the runners take for their
+ * `enabled`, so one cannot be fed from `offered.*` — which does not wait for
+ * the vault's settings — or from a literal. Tests make one with `workSwitch`
+ * from the test support, and only there.
+ */
+export type WorkSwitch = boolean & { readonly [WORK_SWITCH]: true };
+
+/**
+ * Whether each piece of work of a switchable feature may start: only the work
+ * entries, each a `WorkSwitch`, so a runner's `enabled` is read from what
+ * waits for the settings, and a row's or a page's cannot be.
+ */
+export type WorkOffered = { readonly [Entry in WorkEntry]: WorkSwitch };
 
 /** Every entry point, in the order they are listed. */
 export const ENTRY_POINTS = Object.freeze(Object.keys(NEEDS) as EntryPoint[]);
@@ -203,7 +279,8 @@ export function capabilitiesNeeded(entry: EntryPoint): readonly PlatformCapabili
 
 /** The feature an entry point belongs to, or null when no switch hides it. */
 export function featureOfEntry(entry: EntryPoint): FeatureId | null {
-  return FEATURE_OF[entry];
+  const feature: FeatureId | null = FEATURE_OF[entry];
+  return feature;
 }
 
 /**
@@ -256,17 +333,22 @@ const heldUntilAnswered = new WeakMap<EntryPointsOffered, EntryPointsOffered>();
 export function workOffered(
   offered: EntryPointsOffered,
   { answered }: { answered: boolean },
-): EntryPointsOffered {
-  if (answered) return offered;
-  let held = heldUntilAnswered.get(offered);
-  if (held === undefined) {
-    held = Object.freeze({
-      ...offered,
-      ...Object.fromEntries([...STARTS_WORK].map((entry) => [entry, false])),
-    });
+): WorkOffered {
+  let held = offered;
+  if (!answered) {
+    held = heldUntilAnswered.get(offered) ?? heldFor(offered);
     heldUntilAnswered.set(offered, held);
   }
-  return held;
+  // The one place a WorkSwitch is made: each work entry, as waited for here.
+  return held as unknown as WorkOffered;
+}
+
+/** `offered` with every work entry held off. */
+function heldFor(offered: EntryPointsOffered): EntryPointsOffered {
+  return Object.freeze({
+    ...offered,
+    ...Object.fromEntries([...STARTS_WORK].map((entry) => [entry, false])),
+  });
 }
 
 /**

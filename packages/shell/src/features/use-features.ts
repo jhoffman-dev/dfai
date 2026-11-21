@@ -7,6 +7,7 @@ import {
   type EntryPointsOffered,
   type MarkdownPort,
   type VaultFsPort,
+  type WorkOffered,
 } from '@dfai/application';
 import { featuresOn } from '@dfai/domain';
 import { SETTINGS_SECTIONS, type SettingsSectionLink } from '@dfai/ui';
@@ -38,9 +39,10 @@ export function useFeatures({
   /**
    * What work that starts by itself — Kindle's sync, the Slack paste
    * listener, the chat's checks — may start: held until the vault's settings
-   * have answered (`workOffered`, ADR-0055). Runners read this, not `offered`.
+   * have answered (`workOffered`, ADR-0055). Runners read this, not
+   * `offered`; it holds only the work entries, so a row or a page cannot.
    */
-  readonly working: EntryPointsOffered;
+  readonly working: WorkOffered;
   readonly setting: FeaturesSetting;
   readonly known: StoreApi<boolean>;
 } {

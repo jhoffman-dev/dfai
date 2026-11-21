@@ -106,37 +106,130 @@ rather than the platform. A second set of checks beside it would drift from it.
      off (not left to answer nothing). An offer up at the time is
      dismissed, and an answer still on its way dropped, so switching it on
      brings none back. Its token stays in the Keychain.
-     Automations and Meetings come in slice 3.
+
+   Slice 3 adds the last two, which move and write files:
+   - **Automations**: `automationsPage` (the page, `PAGE_ENTRY`, and its
+     sidebar row; its chunk is a feature preload), `claudeAutomations` (the
+     editor's Ask Claude, the presets with a Claude step and the meeting
+     set-up offered on the Inbox, which writes a rule) and a new
+     `automationsRunner`. Run now, dry runs and the presets live on the
+     page, so they go with it; no ⌘K command, shortcut or Settings section
+     belongs to the rules. **Off, no rule is set off by anything**: not the
+     clock, not opening the vault, not a note's news. The runner is not
+     unmounted: it is handed `scheduled: false`, as on a Mac that does not
+     run the vault's automations (U-29), so the prompts are not refreshed,
+     no rule is taken in, news a note set off is let go, and the hourly
+     budgets count nothing. While the settings are unread it is handed
+     `null`, so news is held, not let go, for a vault that leaves it on.
+     **A rule in flight is never cut off.** The clock runs its due rules one
+     after another; the run under way when the switch goes off finishes,
+     writing its log, and no rule after it starts (the runner reads whether
+     this Mac runs the rules as each clock run's turn comes, as a note's run
+     already did). Nothing is killed or interrupted mid-write; the vault
+     guard that stops a run when another vault opens is not used for this.
+     **Switched on again**, the same runner carries on, as when this Mac
+     takes the automations over: a rule that runs on opening runs then, if
+     it has not already run this session (Automations off since the vault
+     opened; on, off and on again in one session does not run it twice),
+     and a schedule missed while off runs once; after that the minute runs
+     what is due, and a note's news sets its rule off again. News about
+     notes that changed while it was off is dropped. Arrivals that came in
+     while it was off (for example meetings imported with Meetings still
+     on) are caught up once when it is switched on, as they are when the
+     app opens, within the usual hourly limits.
+   - **Meetings** (Granola, Calendar): `granolaSettings`, `granolaPull`,
+     `meetingSync` (today's meetings read from Google Calendar as event
+     notes, ADR-0046), a new `meetingSyncSettings` (Settings → Google
+     Calendar's meetings part: its switch, calendars and Sync now) and a new
+     `meetingImport` (the import of meetings that arrive by pull, P28-04, on
+     the automations Mac, and the Inbox's "meetings wait for the named Mac").
+     Off: nothing is pulled from Granola, on opening, on the clock or by
+     Sync now in Settings (the host is still asked, as the vault opens,
+     whether a key is held: that reads the Keychain, asks Granola nothing,
+     and keeps "Open a vault" to its work budget); no calendar is read for
+     meetings;
+     nothing is imported. A Granola pull under way finishes and its toast is
+     not shown; a meeting sync under way stops between meetings, writing
+     nothing more, as its Stop does; the import asks before each file
+     whether it may write, and stops there. Switched on, Granola pulls as on
+     opening, the meeting sync runs at once and on its clock, and the import
+     catches up, as when this Mac takes the automations over.
+     **Meeting notes stay** and open as ordinary notes (there is no Meetings
+     page or row: a vault's meeting type is an ordinary type row). The
+     Granola key in the Keychain and the Google sign-in stay, as Kindle's
+     sign-in does; switch Meetings on to use or remove them.
+     **Automations does not require Meetings.** Most rules act on any note,
+     and a meeting note made by hand, or by the API, is still a meeting. An
+     "After a meeting" rule keeps its row as it was, on and with its
+     schedule, and runs on the meetings that still arrive that way; its
+     preset stays among the presets.
+
+   **Time blocks are not Meetings.** Two-way block sync with Google Calendar
+   (ADR-0030, `blockSync`) is time-blocking: it shares the Google sign-in and
+   Settings → Google Calendar with the meetings, and has no switch. It keeps
+   running with Meetings off, and so do the card, its sign-in and its blocks
+   part; only the card's meetings part goes.
+
+   **The automations Mac.** The setting is per vault, so it is synced:
+   switched off on one Mac, Automations is off on the other once it pulls.
+   The claim of the Mac that runs the automations
+   (`packages/domain/src/sync/automations-claim.ts`, Settings → Sync's "Run
+   automations on this Mac") is sync's and is neither taken nor released by
+   the switch: with Automations off nothing runs on either Mac, and
+   switched on, the rules run where the claim says, as before.
 
    **Work that starts by itself waits for the settings read.** Until the
    vault's settings note answers, the off list is empty and every feature
    reads as on. That is right for what is drawn — rows, commands and
    Settings show at once, as the sidebar's default order does — but not for
    work: a runner, timer, listener or network call of a switchable feature
-   would start for a feature the file switches off. Such entry points are
-   listed once, in `STARTS_WORK` beside `FEATURE_OF` (`kindleSync`,
-   `slackLinkOffer`, and `chatWork`: the chat's reachability check, window
-   context and turns), and `workOffered` holds them until the read answers;
-   runners read `working`, not `offered`. A failed read still answers, and
+   would start for a feature the file switches off. Every entry point a
+   switch can take away is classified once, in `KIND_OF` beside
+   `FEATURE_OF`, as `'draws'` or `'work'`; the record is exhaustive, so an
+   entry point given a feature does not compile until it is classified.
+   `STARTS_WORK` is built from it (`kindleSync`, `slackLinkOffer`,
+   `chatWork` — the chat's reachability check, window context and turns —
+   `automationsRunner`, `granolaPull`, `meetingSync` and `meetingImport`),
+   and `workOffered` holds them until the read answers. Runners read
+   `working`, which holds only the work entries, each a `WorkSwitch`: a
+   branded boolean only `workOffered` makes, which every runner takes for
+   its `enabled`, so a runner can be fed neither from a row's or a page's
+   entry nor from `offered.*` or a literal (tests make one with
+   `workSwitch`). A failed read still answers, and
    with no vault open nothing runs. The feature chunks' preloads already wait
    for the read. So a Slack link pasted before the answer is a plain paste,
    whatever the file says, and Kindle's first sync comes after it.
 
 5. **What is not gated.** The local API and the MCP server keep answering for
    an off feature. The request is about the view; changing who may call what
-   is a separate decision with its own risk (ADR-0016, ADR-0017).
+   is a separate decision with its own risk (ADR-0016, ADR-0017). So with
+   Meetings off the API's Granola Sync now still pulls, and its meeting
+   drafts are still written; with Automations off its automation routes
+   still list rules, read logs and dry-run.
 
    **The Ask line.** The Ask switch hides Ask's and the chat's own surfaces
    (pages, panels, commands, shortcuts), not Claude. Other features reach
    Claude through the same `ModelProvider` and keep doing so with Ask off:
    the Inbox's Suggest (now its own entry point, `inboxSuggest`, which no
    switch hides), Skills' Ask Claude… (`skillDraft`) and rules' Claude steps
-   (`claudeAutomations`, untouched until slice 3). Settings → Claude stays
+   (`claudeAutomations`, which is Automations', not Ask's). Settings → Claude stays
    too: its provider and model are what those use. Search by meaning
    (`meaningSearch`) and a note's related notes have their own on/off and no
    switch here; Ask runs no embedding or indexing of its own. The graph's
    data (`useVaultGraph`) is still read with Graph off, since note titles,
    tab names and related notes are drawn from it.
+
+   **What stays with Automations off.** The rules and their logs, read as
+   ever. **Undo of runs already made**: a tab on the Automations page shows
+   the notice and, under it, each rule whose last run can be undone, with
+   "Undo last run", through the runner's one door. The run log and the
+   Activity lines (Activity's link to a rule opens that notice). The
+   proposals rules made: they are notes in `Inbox/Proposals` and stay on the
+   Inbox, to be accepted or refused. The Inbox's own tidy-ups — Suggest and
+   Apply (inbox assist, `inboxSuggest`), moving loose notes and old
+   meetings, archiving tasks meetings made, filing meetings into projects —
+   which are previewed and run by hand, not rules. The API's and MCP's
+   automation routes.
 
 6. **Nothing is deleted.** Switching a feature off removes no note, file,
    setting or tab, and closes nothing. Switching it on brings everything back
@@ -161,3 +254,8 @@ rather than the platform. A second set of checks beside it would drift from it.
   so what another Mac chose for it survives.
 - Settings opened from the notice opens at Features with its heading focused;
   opened any other way, it opens at its top as before.
+- With Automations off the runner still reads the rules and their logs on
+  its minute, as a Mac that does not run them does, so the undo of past runs
+  and the API see them current. No rule runs.
+- With Meetings off, a vault with an "After a meeting" rule keeps it on; it
+  acts on meeting notes made by hand or through the API.

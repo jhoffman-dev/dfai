@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { apiFixture, fakeMarkdown, fakeSlack, type SlackCall } from '@dfai/application';
+import { apiFixture, fakeMarkdown, fakeSlack, type SlackCall, workSwitch } from '@dfai/application';
 import {
   SLACK_PERMALINK,
   slackPermalinkAnswer,
@@ -37,9 +37,12 @@ function setup({ hasToken = true, vault = '/vaults/larkspur' as string | null } 
     timeZone: () => 'UTC',
     openNote,
   };
-  const hook = renderHook(({ enabled }: { enabled: boolean }) => useSlackPaste(ports, enabled), {
-    initialProps: { enabled: true },
-  });
+  const hook = renderHook(
+    ({ enabled }: { enabled: boolean }) => useSlackPaste(ports, workSwitch(enabled)),
+    {
+      initialProps: { enabled: true },
+    },
+  );
   return { api, slack, openNote, hook };
 }
 
@@ -150,7 +153,7 @@ describe('useSlackPaste', () => {
       timeZone: () => 'UTC',
       openNote: vi.fn(),
     });
-    const hook = renderHook((vault: string) => useSlackPaste(ports(vault), true), {
+    const hook = renderHook((vault: string) => useSlackPaste(ports(vault), workSwitch(true)), {
       initialProps: '/vaults/larkspur',
     });
     act(() => {

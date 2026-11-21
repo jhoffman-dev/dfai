@@ -12,6 +12,7 @@ import {
   type MeetingSyncRecords,
   type MeetingSyncReport,
   type VaultFsPort,
+  type WorkSwitch,
 } from '@dfai/application';
 import { useSteadyCallback } from '@dfai/ui';
 import { useVaultSettingsRead } from '../settings/use-vault-settings-read.ts';
@@ -51,6 +52,12 @@ export interface MeetingSyncOptions {
   readonly activity: Pick<ActivityLog, 'inVault'>;
   /** Re-reads the tree and the index once a sync has written into the vault. */
   readonly onWrote: () => void;
+  /**
+   * Whether Meetings is switched on (#901, `working.meetingSync`, held until
+   * the vault's settings answer). Off, no calendar is read for meetings, and a
+   * sync under way stops between meetings, as its Stop does.
+   */
+  readonly enabled: WorkSwitch;
 }
 
 export interface MeetingSyncController {
@@ -119,7 +126,8 @@ export function useMeetingSync(options: MeetingSyncOptions): MeetingSyncControll
   const { settings } = useVaultSettingsRead({ fs, markdown, vaultKey });
   const setting = useMemo(() => parseMeetingSetting(settings ?? {}), [settings]);
   const google = useMemo(() => parseGoogleCalendarSetting(settings ?? {}), [settings]);
-  const enabled = meetings !== null && setting.enabled && google.clientId !== null;
+  const enabled =
+    options.enabled && meetings !== null && setting.enabled && google.clientId !== null;
   const latest = useRef({ options, enabled });
   latest.current = { options, enabled };
   const running = useRef(new Set<string>());
@@ -172,10 +180,13 @@ export function useMeetingSync(options: MeetingSyncOptions): MeetingSyncControll
     return report;
   };
 
+  // Every way into a sync — opening, the clock, Sync now, the step after sign-in — comes here,
+  // and reads Meetings' switch as it stands (#920): off, Google is asked nothing.
   const run = useSteadyCallback(async (asked: boolean) => {
     const now = latest.current.options;
     const host = now.meetings;
-    if (host === null || now.vaultKey === null || running.current.has(now.vaultKey)) return;
+    if (!now.enabled || host === null || now.vaultKey === null) return;
+    if (running.current.has(now.vaultKey)) return;
     const vault = now.vaultKey;
     running.current.add(vault);
     try {

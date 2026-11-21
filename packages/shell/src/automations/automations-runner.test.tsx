@@ -19,6 +19,7 @@ import {
   recordingActivity,
   type AutomationPorts,
   type EntryPointsOffered,
+  workSwitch,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
 import { createIndexStatusStore } from '../index/index-status-store.ts';
@@ -150,7 +151,12 @@ async function settle() {
 }
 
 /** The runner under a window that counts its own draws, with the index's news to tell by hand. */
-function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
+function mountRunner(
+  vault: ReturnType<typeof memoryVault>,
+  live = false,
+  /** The Automations switch as the window first hands it (#901): on, the settings read. */
+  switched: Switched = { enabled: workSwitch(true), featuresKnown: true },
+) {
   const status = createIndexStatusStore();
   status.setState({ vault: VAULT, phase: 'ready', revision: 1 });
   const { client, wrapper: Wrapper } = queryWrapper();
@@ -161,7 +167,8 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
   const windowDraws = { count: 0 };
   let showPage: (shown: boolean) => void = () => {};
   let offerAnew: (offered: EntryPointsOffered) => void = () => {};
-  const props: Omit<AutomationsRunnerProps, 'live'> = {
+  let switchAnew: (next: Switched) => void = () => {};
+  const props: Omit<AutomationsRunnerProps, 'live' | keyof Switched> = {
     offered: EVERY_ENTRY_POINT,
     store,
     status,
@@ -180,9 +187,11 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
     windowDraws.count += 1;
     const [shown, setShown] = useState(live);
     const [offered, setOffered] = useState<EntryPointsOffered>(EVERY_ENTRY_POINT);
+    const [switches, setSwitches] = useState(switched);
     showPage = setShown;
     offerAnew = setOffered;
-    return <AutomationsRunner {...props} offered={offered} live={shown} />;
+    switchAnew = setSwitches;
+    return <AutomationsRunner {...props} {...switches} offered={offered} live={shown} />;
   }
   const view = render(
     <Wrapper>
@@ -205,8 +214,12 @@ function mountRunner(vault: ReturnType<typeof memoryVault>, live = false) {
     view,
     show: (on: boolean) => act(() => showPage(on)),
     offer: (offered: EntryPointsOffered) => act(() => offerAnew(offered)),
+    switchTo: (next: Switched) => act(() => switchAnew(next)),
   };
 }
+
+/** What the window hands the runner of the Automations switch (#901). */
+type Switched = Pick<AutomationsRunnerProps, 'enabled' | 'featuresKnown'>;
 
 const added = (files: Record<string, string>, path: string) => ({
   vault: VAULT,
@@ -301,7 +314,7 @@ describe('the automations runner (#326)', () => {
     expect(names()).toEqual(['Sweep renamed']);
   });
 
-  it.each([['reading'], ['kindle'], ['ask'], ['graph'], ['slack']] as const)(
+  it.each([['reading'], ['kindle'], ['ask'], ['meetings'], ['graph'], ['slack']] as const)(
     'carries on, not starting over, when %s is switched off (#901)',
     async (feature) => {
       const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
@@ -336,3 +349,223 @@ describe('the automations runner (#326)', () => {
     expect(store.getState().automations).toBeNull();
   });
 });
+
+describe('the Automations switch (#901)', () => {
+  const OFF_UNREAD: Switched = { enabled: workSwitch(false), featuresKnown: false };
+  const OFF: Switched = { enabled: workSwitch(false), featuresKnown: true };
+  const ON: Switched = { enabled: workSwitch(true), featuresKnown: true };
+  const archived = (files: Record<string, string>) => files['Archive/Tasks/A.md'] !== undefined;
+
+  it('sets off no rule for a vault whose settings switch it off, before the read answers or after', async () => {
+    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo, store } = mountRunner(vault, false, OFF_UNREAD);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+
+    await switchTo(OFF);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+    expect(archived(vault.files)).toBe(false);
+    // The rules are still read, for the undo of runs already made.
+    expect(store.getState().automations?.listing?.automations).toHaveLength(1);
+  });
+
+  it('holds what a note set off while the settings are unread, and runs it once they say on', async () => {
+    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo } = mountRunner(vault, false, OFF_UNREAD);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(archived(vault.files)).toBe(false);
+
+    await switchTo(ON);
+    await settle();
+    expect(archived(vault.files)).toBe(true);
+    expect(runsIn(vault.files[LOG])).toHaveLength(1);
+  });
+
+  it('stops on switch-off, and starts again on switch-on without the app starting over', async () => {
+    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo, relay } = mountRunner(vault);
+    await settle();
+    const watching = relay.clock.forVault(VAULT)?.watchingSince;
+    await switchTo(OFF);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    await settle();
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+
+    await switchTo(ON);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(archived(vault.files)).toBe(true);
+    expect(runsIn(vault.files[LOG])).toHaveLength(1);
+    // The same runner throughout: switched on again, it did not start over.
+    expect(relay.clock.forVault(VAULT)?.watchingSince).toBe(watching);
+  });
+
+  it('lets the news of a note changed while off go: switched on, it sets nothing off', async () => {
+    const tidy = rule('Sweep').replace('when: a task is created', 'when: a task is changed');
+    const vault = memoryVault({ [RULE]: tidy, [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo } = mountRunner(vault);
+    await settle();
+    const changed = () => ({
+      vault: VAULT,
+      changes: [
+        {
+          kind: 'changed' as const,
+          path: TASK,
+          type: 'task',
+          digest: digestOf(vault.files[TASK] ?? ''),
+          before: 'a',
+        },
+      ],
+    });
+
+    await switchTo(OFF);
+    await settle();
+    vault.files[TASK] = '---\ntype: task\n---\n\nEdited while off.\n';
+    act(() => changes.publish(changed()));
+    await settle();
+    await switchTo(ON);
+    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+    });
+    await settle();
+    expect(archived(vault.files)).toBe(false);
+    expect(runsIn(vault.files[LOG])).toEqual([]);
+
+    // The control: the same news heard while on sets the rule off.
+    vault.files[TASK] = '---\ntype: task\n---\n\nEdited while on.\n';
+    act(() => changes.publish(changed()));
+    await settle();
+    expect(archived(vault.files)).toBe(true);
+  });
+
+  it('lets the run under way finish, its log written, and starts no rule after it', async () => {
+    const files: Record<string, string> = {
+      '.atlas/automations/A sweep.md': openRule('A sweep'),
+      '.atlas/automations/B sweep.md': openRule('B sweep'),
+      [TASK]: '---\ntype: task\n---\n',
+      'Projects/B.md': '---\ntype: project\n---\n',
+    };
+    const vault = memoryVault(files);
+    const held = holdFirstMove(vault);
+    const { switchTo } = mountRunner(vault);
+    await settle();
+    // The first rule is mid-run, its move asked for and not yet done.
+    expect(held.asked()).toBe(1);
+
+    await switchTo(OFF);
+    held.release();
+    await settle();
+    const logs = Object.keys(files).filter((path) => path.startsWith('.atlas/automations/log/'));
+    expect(logs).toHaveLength(1);
+    expect(runsIn(files[logs[0]!]).map((entry) => entry.kind)).toEqual(['run']);
+    expect(files['Archive/Tasks/A.md']).toBeDefined();
+    expect(files['Projects/B.md']).toBeDefined();
+    expect(held.asked()).toBe(1);
+  });
+
+  it('runs the second rule too when nothing is switched off: the case above is not vacuous', async () => {
+    const files: Record<string, string> = {
+      '.atlas/automations/A sweep.md': openRule('A sweep'),
+      '.atlas/automations/B sweep.md': openRule('B sweep'),
+      [TASK]: '---\ntype: task\n---\n',
+      'Projects/B.md': '---\ntype: project\n---\n',
+    };
+    const vault = memoryVault(files);
+    const held = holdFirstMove(vault);
+    mountRunner(vault);
+    await settle();
+    held.release();
+    await settle();
+    const logs = Object.keys(files).filter((path) => path.startsWith('.atlas/automations/log/'));
+    expect(logs).toHaveLength(2);
+    expect(files['Archive/Projects/B.md']).toBeDefined();
+  });
+
+  it('still undoes a run already made, with Automations off', async () => {
+    const vault = memoryVault({ [RULE]: rule('Sweep'), [TASK]: '---\ntype: task\n---\n' });
+    const { changes, switchTo, store } = mountRunner(vault);
+    await settle();
+    act(() => changes.publish(added(vault.files, TASK)));
+    await settle();
+    expect(archived(vault.files)).toBe(true);
+
+    await switchTo(OFF);
+    await settle();
+    const automations = store.getState().automations;
+    const loaded = automations?.listing?.automations[0];
+    expect(loaded).toBeDefined();
+    // The undo lists the vault's notes to find what the run archived.
+    vault.ports.fs.listNotes = async () =>
+      Object.keys(vault.files).map((path) => ({
+        name: path.split('/').at(-1) ?? path,
+        path: createVaultPath(path),
+        modified: 1,
+        size: vault.files[path]?.length ?? 0,
+      }));
+    await act(async () => {
+      await automations?.undo(loaded!.rule);
+    });
+    await settle();
+    expect(vault.files[TASK]).toBeDefined();
+    expect(archived(vault.files)).toBe(false);
+  });
+});
+
+/** A rule run as the vault opens, archiving one task of its own: `A sweep` takes A, `B sweep` B. */
+function openRule(name: string): string {
+  return [
+    '---',
+    'atlas: automation',
+    `name: ${name}`,
+    'enabled: true',
+    'when: on app open',
+    `which: FROM ${name.startsWith('A') ? 'task' : 'project'}`,
+    'do: archive',
+    '---',
+    '',
+  ].join('\n');
+}
+
+/** Holds the vault's first move until `release`, counting the moves asked for. */
+function holdFirstMove(vault: ReturnType<typeof memoryVault>) {
+  vault.ports.notePaths = Object.keys(vault.files).map((path) => createVaultPath(path));
+  // Each rule asks after its own type alone: tasks live in Tasks/, projects in Projects/.
+  Object.assign(vault.ports, {
+    types: [...vault.ports.types, { ...vault.ports.types[0]!, name: 'project', label: 'Project' }],
+  });
+  vault.ports.index.query = async (_sql, parameters) => {
+    const type = parameters.includes('project') ? 'project' : 'task';
+    const folder = type === 'project' ? 'Projects/' : 'Tasks/';
+    return {
+      columns: ['path', 'title', 'type'],
+      rows: Object.keys(vault.files)
+        .filter((path) => path.startsWith(folder))
+        .map((path) => [path, path, type]),
+      truncated: false,
+    };
+  };
+  const move = vault.ports.fs.moveEntry;
+  let count = 0;
+  let release: () => void = () => {};
+  const first = new Promise<void>((resolve) => (release = resolve));
+  vault.ports.fs.moveEntry = async (args) => {
+    count += 1;
+    if (count === 1) await first;
+    return move(args);
+  };
+  return { release: () => release(), asked: () => count };
+}

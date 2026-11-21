@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { NO_KINDLE_SYNC_RECORD, type KindleSyncRecord, type KindleSyncReport } from '@dfai/domain';
-import { fakeIndexPort, fakeVaultFs, type KindleSync } from '@dfai/application';
+import { fakeIndexPort, fakeVaultFs, type KindleSync, workSwitch } from '@dfai/application';
 import { useKindleSync, type KindleHost, type KindleWindowOptions } from './use-kindle-sync.ts';
 
 /*
@@ -51,7 +51,7 @@ function render(kindle: KindleHost, overrides: Partial<KindleWindowOptions> = {}
     vaultKey: '/Users/mara/Vault',
     indexReady: true,
     onWrote: () => {},
-    enabled: true,
+    enabled: workSwitch(true),
     ...overrides,
   };
   return renderHook((props: KindleWindowOptions) => useKindleSync(props), {

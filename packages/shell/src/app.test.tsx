@@ -2,14 +2,23 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createVaultPath, type VaultEntry, type VaultPath } from '@dfai/domain';
+import {
+  createVaultPath,
+  type KindleSyncRecord,
+  type VaultEntry,
+  type VaultPath,
+} from '@dfai/domain';
 import {
   EVERY_ENTRY_POINT,
   VaultAccessError,
   memoryActivityStore,
   memoryIndexPort,
+  fakeBlockCalendar,
+  fakeCalendarSource,
   fakeGoogleCalendar,
   fakeGranola,
+  memoryBlockSyncRecords,
+  memoryMeetingSyncRecords,
   fakeSlack,
   failed,
   fakeSleepClock,
@@ -26,12 +35,14 @@ import {
   type WindowClosingPort,
 } from '@dfai/application';
 import { remarkMarkdown } from '@dfai/adapters';
+import type { ComponentProps } from 'react';
 import { App, localToday } from './app.tsx';
 import { preloadPages } from './pages-on-first-use.ts';
 import type { VaultPorts } from './vault/use-vault.ts';
 import type { NotePorts } from './notes/use-note.ts';
 import type { IndexPorts } from './index/use-index.ts';
 import type { ChatPorts } from './chat/use-chat.ts';
+import type { KindleHost } from './kindle/use-kindle-sync.ts';
 import type { LocalApiPorts } from './api/use-local-api.ts';
 import type { SourcePorts } from './sources/source-ports.ts';
 import { createBrowserGlobalCaptureStore } from './global-capture/browser-global-capture-store.ts';
@@ -299,6 +310,8 @@ const renderApp = (
   vault: ReturnType<typeof fakeVault>,
   activity: ReturnType<typeof memoryActivityStore> = memoryActivityStore(),
   globalCapture = fakeGlobalCapture(),
+  /** Ports a test hands in besides these, or in their place. */
+  more: Partial<ComponentProps<typeof App>> = {},
 ) =>
   render(
     <App
@@ -318,6 +331,7 @@ const renderApp = (
       granola={granola}
       slack={slack}
       globalCapture={globalCapture.ports}
+      {...more}
     />,
   );
 
@@ -2915,3 +2929,217 @@ function typeInto(instance: Editor, text: string): void {
     if (handled !== true) instance.view.dispatch(instance.state.tr.insertText(char, from, to));
   }
 }
+
+/**
+ * As `features/work-until-answered.test.tsx`, but through the window itself,
+ * so a runner wired from `offered` rather than `working` is caught here (the
+ * review of #908). The chat's seat is shown from the first frame, so it is the
+ * sharpest case: unheld, it asks after Claude before the settings answer.
+ * Through the window Kindle waits for the index as well, which waits on the
+ * same read, so for Kindle this holds what happens after the answer.
+ */
+describe('work that starts by itself waits for the settings, through the window (#901)', () => {
+  const SETTINGS = '.atlas/settings.md';
+
+  /** The vault, its settings note answering only when `answer` is called. */
+  function lateSettings(text: string) {
+    const vault = fakeVault({ remembered: location, files: { [SETTINGS]: text } });
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const readNotes: VaultFsPort['readNotes'] = async (paths) => {
+      if (paths.includes(SETTINGS)) await answered;
+      return vault.fs.readNotes(paths);
+    };
+    return { vault: { ...vault, fs: { ...vault.fs, readNotes } }, answer };
+  }
+
+  /** Kindle, connected and on for the vault, counting its syncs. */
+  function countingKindle() {
+    const syncs: string[] = [];
+    let record: KindleSyncRecord = { connected: true, lastHoldAt: null, last: null };
+    const kindle: KindleHost = {
+      notebook: {
+        fetchLibrary: () => Promise.reject(new Error('not here')),
+        fetchAnnotations: () => Promise.reject(new Error('not here')),
+      },
+      session: { connect: async () => {}, disconnect: async () => {} },
+      sync: async () => {
+        syncs.push('sync');
+        return { kind: 'synced', books: [], added: 0 };
+      },
+      delay: { wait: async () => {} },
+      records: { read: () => record, write: (next) => void (record = next) },
+      vaults: { isOn: () => true, set: () => {} },
+    };
+    return { kindle, syncs };
+  }
+
+  /** Claude, counting each time the window asks whether it can be reached. */
+  function countingClaude() {
+    const asked: string[] = [];
+    const provider: ModelProvider = {
+      ...unreachable,
+      status: async () => {
+        asked.push('status');
+        return unreachable.status();
+      },
+    };
+    return { chat: { claudeCode: provider, anthropicApi: () => provider }, asked };
+  }
+
+  /** The Graph's row: gone once the settings that switch Graph off have been taken in. */
+  const graphRow = () => screen.queryByRole('button', { name: 'Graph' });
+
+  async function openWith(text: string) {
+    const { vault, answer } = lateSettings(text);
+    const kindle = countingKindle();
+    const claude = countingClaude();
+    // The chat's seat, the aside's Claude tab, was left open: the window asks after Claude for it.
+    window.localStorage.setItem(
+      `atlas.aside:${location.absolutePath}`,
+      JSON.stringify({ open: true, tab: 'claude' }),
+    );
+    renderApp(vault, memoryActivityStore(), fakeGlobalCapture(), {
+      kindle: kindle.kindle,
+      chat: claude.chat,
+    });
+    expect(await screen.findByRole('button', { name: 'Graph' })).toBeDefined();
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    return { answer, syncs: kindle.syncs, asked: claude.asked };
+  }
+
+  it('syncs no Kindle and asks nothing of Claude for a vault that switches both off', async () => {
+    const opened = await openWith('---\nfeaturesOff: [kindle, ask, graph]\n---\n');
+    expect(opened.syncs).toEqual([]);
+    expect(opened.asked).toEqual([]);
+    opened.answer();
+    await waitFor(() => expect(graphRow()).toBeNull());
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    expect(opened.syncs).toEqual([]);
+    expect(opened.asked).toEqual([]);
+  });
+
+  it('starts Kindle and the chat only once the settings say they are on', async () => {
+    const opened = await openWith('---\nquickAdd: [task]\n---\n');
+    expect(opened.syncs).toEqual([]);
+    expect(opened.asked).toEqual([]);
+    opened.answer();
+    await waitFor(() => expect(opened.syncs).toEqual(['sync']));
+    await waitFor(() => expect(opened.asked.length).toBeGreaterThan(0));
+  });
+});
+
+/**
+ * Automations and Meetings (#901, slice 3), through the window: with the
+ * settings read held, no rule runs, nothing is pulled from Granola and no
+ * calendar is read for meetings; a vault that switches them off never
+ * starts them, and one that leaves them on starts them once the read
+ * answers. Time blocks share the Google sign-in and are not Meetings': they
+ * sync with Meetings off. The rules, Granola's pull and the meeting sync all
+ * wait on the settings note itself (for the owner, the index and the
+ * calendar), so the runners' own tests (`automations-runner.test.tsx`,
+ * `use-granola-pull.test.tsx`, `use-meeting-sync.test.tsx`) hold the switch
+ * before the answer, and this holds that the window wires each to it.
+ */
+describe('Automations and Meetings wait for the settings, through the window (#901)', () => {
+  const SETTINGS = '.atlas/settings.md';
+  const RULE = '.atlas/automations/Sweep.md';
+  const RULE_LOG = '.atlas/automations/log/Sweep.md';
+  const CLIENT_ID = '123456789012-abcdef0123456789abcdef0123456789.apps.googleusercontent.com';
+  const GOOGLE = [
+    `google_client_id: ${CLIENT_ID}`,
+    'google_calendar: dfai-blocks@group.calendar.example.com',
+    'google_meetings: true',
+    'google_blocks: true',
+  ].join('\n');
+  const SWEEP = [
+    '---',
+    'atlas: automation',
+    'name: Sweep',
+    'enabled: true',
+    'when: on app open',
+    'which: FROM task',
+    'do: archive',
+    '---',
+    '',
+  ].join('\n');
+
+  async function openWith(frontmatter: string) {
+    const files: Record<string, string> = {
+      [SETTINGS]: `---\n${frontmatter}\n${GOOGLE}\n---\n`,
+      [RULE]: SWEEP,
+    };
+    const vault = fakeVault({ remembered: location, files });
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const readNotes: VaultFsPort['readNotes'] = async (paths) => {
+      if (paths.includes(SETTINGS)) await answered;
+      return vault.fs.readNotes(paths);
+    };
+    // A key is held, so Granola pulls as the vault opens: each listing of its notes is counted.
+    const pulls: string[] = [];
+    const granolaHere = {
+      ...granola,
+      port: {
+        ...granola.port,
+        status: async () => ({ hasKey: true, lastRefusal: null }),
+        listNotes: (args: Parameters<typeof granola.port.listNotes>[0]) => {
+          pulls.push('list');
+          return granola.port.listNotes(args);
+        },
+      },
+    };
+    const events = fakeCalendarSource({ primary: [] });
+    const blockCalendar = fakeBlockCalendar();
+    renderApp(
+      { ...vault, fs: { ...vault.fs, readNotes } },
+      memoryActivityStore(),
+      fakeGlobalCapture(),
+      {
+        granola: granolaHere,
+        meetings: { source: events.source, records: memoryMeetingSyncRecords().records },
+        blocks: { calendar: blockCalendar.calendar, records: memoryBlockSyncRecords().records },
+      },
+    );
+    expect(await screen.findByRole('button', { name: 'Graph' })).toBeDefined();
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    return {
+      answer,
+      /** What a rule's run log would say: created, or written over. */
+      ruleLog: () => vault.written[RULE_LOG] ?? files[RULE_LOG],
+      pulls,
+      meetingsRead: () => events.state.asked.length,
+      blocksRead: () => blockCalendar.state.asked.length,
+    };
+  }
+
+  const graphRow = () => screen.queryByRole('button', { name: 'Graph' });
+
+  it('runs no rule, pulls nothing from Granola and reads no meetings for a vault that switches both off', async () => {
+    const opened = await openWith('featuresOff: [automations, meetings, graph]');
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.pulls).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    opened.answer();
+    await waitFor(() => expect(graphRow()).toBeNull());
+    // Time blocks are not Meetings': they sync with it off (ADR-0055).
+    await waitFor(() => expect(opened.blocksRead()).toBeGreaterThan(0));
+    for (let turn = 0; turn < 10; turn += 1) await act(async () => {});
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.pulls).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    expect(screen.queryByRole('button', { name: 'Automations' })).toBeNull();
+  });
+
+  it('starts the rules, Granola and the meetings only once the settings say they are on', async () => {
+    const opened = await openWith('quickAdd: [task]');
+    expect(opened.ruleLog()).toBeUndefined();
+    expect(opened.pulls).toEqual([]);
+    expect(opened.meetingsRead()).toBe(0);
+    opened.answer();
+    await waitFor(() => expect(opened.ruleLog()).toContain('Ran when DFAI opened'));
+    await waitFor(() => expect(opened.pulls.length).toBeGreaterThan(0));
+    await waitFor(() => expect(opened.meetingsRead()).toBeGreaterThan(0));
+    expect(screen.getByRole('button', { name: 'Automations' })).toBeDefined();
+  });
+});
