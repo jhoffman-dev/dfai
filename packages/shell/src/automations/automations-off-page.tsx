@@ -1,12 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { AutomationListing } from '@dfai/application';
-import { lastUndoableRun, logEntrySummary } from '@dfai/domain';
+import { lastUndoableRun, logEntrySummary, type LogEntry } from '@dfai/domain';
 import { PastRunsUndo, type UndoableRun } from '@dfai/ui';
 import { FeatureOffPage } from '../features/feature-off-page.tsx';
 import type { PageChrome } from '../page-frame-fallback.tsx';
 import type { PageContainerProps } from '../workspace/page-wiring.ts';
 import { shownTime } from './automation-rows.ts';
-import { useAutomationsController } from './automations-store.ts';
+import { useAutomationsController, type AutomationsController } from './automations-store.ts';
 
 const NO_RUNS: readonly UndoableRun[] = [];
 
@@ -39,20 +39,38 @@ export function AutomationsOffPage({
   onTurnOn,
 }: Pick<PageContainerProps, 'wiring'> & { chrome: PageChrome; onTurnOn: () => void }) {
   const automations = useAutomationsController(wiring.pages.automations.store);
-  const listing = automations?.listing ?? null;
-  const runs = useMemo(() => undoableRuns(listing), [listing]);
   return (
     <FeatureOffPage feature="automations" chrome={chrome} onTurnOn={onTurnOn}>
-      {automations !== null && (
-        <PastRunsUndo
-          runs={runs}
-          busy={automations.busy}
-          onUndo={(id) => {
-            const loaded = listing?.automations.find(({ rule }) => rule.path === id);
-            if (loaded !== undefined) void automations.undo(loaded.rule);
-          }}
-        />
-      )}
+      {automations !== null && <PastRuns automations={automations} />}
     </FeatureOffPage>
   );
+}
+
+/** The undoable runs, and what the last undo did or why it could not (#920). */
+function PastRuns({ automations }: { automations: AutomationsController }) {
+  const { listing, busy, notice, setNotice, undo } = automations;
+  const runs = useMemo(() => undoableRuns(listing), [listing]);
+  const [done, setDone] = useState<string | null>(null);
+  return (
+    <PastRunsUndo
+      runs={runs}
+      busy={busy}
+      // Why it could not is the runner's notice, which its one door sets on a failure.
+      said={done ?? notice}
+      onUndo={(id) => {
+        const loaded = listing?.automations.find(({ rule }) => rule.path === id);
+        if (loaded === undefined) return;
+        setDone(null);
+        setNotice(null);
+        void undo(loaded.rule).then((entry) => {
+          if (entry !== null) setDone(undoneSaid(loaded.rule.name, entry));
+        });
+      }}
+    />
+  );
+}
+
+/** What an undo that went through says: `Undid the last run of Sweep. Put back 2 notes.` */
+export function undoneSaid(name: string, entry: LogEntry): string {
+  return `Undid the last run of ${name}. ${logEntrySummary(entry)}`;
 }
