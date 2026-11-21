@@ -131,7 +131,7 @@ test('a time is set on a due, shown, sorted by, cleared, and read back after a r
 
   // Cleared: the time goes, the date stays, and the note is byte for byte what it was.
   await openNote(page, 'Call Mara Quill');
-  await page.getByRole('button', { name: /^clear due time$/i }).click();
+  await page.getByRole('button', { name: /^clear time of due$/i }).click();
   await expectFile(vault, 'Call Mara Quill.md').toBe(CALL);
 
   // Read again from the files: no time here; the others never rewritten.

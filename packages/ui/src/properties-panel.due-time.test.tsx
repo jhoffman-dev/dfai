@@ -38,7 +38,7 @@ describe('the due’s time in the properties panel (#928)', () => {
     expect((timeField() as HTMLInputElement).value).toBe('');
     fireEvent.blur(timeField());
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Clear Due time' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear time of Due' })).toBeNull();
   });
 
   it('writes the day with the time set, when the field is left', () => {
@@ -70,7 +70,7 @@ describe('the due’s time in the properties panel (#928)', () => {
 
   it('takes the time off and leaves the date, from the keyboard', async () => {
     const onChange = panel(dueRow('2026-12-04T15:30'));
-    const clear = screen.getByRole('button', { name: 'Clear Due time' });
+    const clear = screen.getByRole('button', { name: 'Clear time of Due' });
     clear.focus();
     await userEvent.keyboard('{Enter}');
     expect(onChange).toHaveBeenLastCalledWith('due', '2026-12-04');

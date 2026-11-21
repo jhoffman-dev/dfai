@@ -611,7 +611,7 @@ function DueTimeEditor({
         <button
           type="button"
           className="props__date-clear"
-          aria-label={`Clear ${label} time`}
+          aria-label={`Clear time of ${label}`}
           title="Clear time"
           onClick={() => write(null)}
         >
