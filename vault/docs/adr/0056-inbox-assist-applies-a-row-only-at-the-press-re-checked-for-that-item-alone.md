@@ -76,24 +76,25 @@ Said plainly: a steered batch answer can choose the **wrong real project**,
 or the **wrong kind** (a task where the person meant a note, or the other
 way), with nothing in the item's text to back the choice. The re-check can
 only confirm that the project is a real one offered, and that the field was
-empty. At apply-by-hand the person reading the row is the only defence, so a
-filing or task row says so beside Apply: "Claude chose Larkspur Payroll;
-nothing in the item confirms it. Check it before you apply." This **blocks
-slice 5 (unattended)** until the project and the kind have evidence of their
-own in the item, or their own question.
+empty. **Project:** never written in this slice — every row that would set
+one is filing, which is preview-only (#925). **Kind:** making a note a task
+is still applied on Claude's unconfirmed choice; the person reading the row
+is the check, and the row says so beside Apply. This **blocks slice 5
+(unattended)** until the project and the kind have evidence of their own in
+the item, or their own question.
 
 ### The argument, per row kind
 
-| Row kind                     | Applied?             | What the domain confirms without the model                                                                                                                                                                                                                                                                                                   |
-| ---------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Make it a task               | yes                  | The kind is Claude's choice from a closed set. The item is not a task yet and has no type of its own (else the plan asks). Writes `type` and `status` only while both are empty.                                                                                                                                                             |
-| File a note                  | yes                  | The project is Claude's choice among the filing targets the domain offered; the re-check finds it still one. Writes `project` only while it is empty.                                                                                                                                                                                        |
-| A due date, on either        | with evidence        | A date is a free value, not a choice among options, and DFAI has no reader of its own for dates in prose. So it is applied only when the item's own words say it as `YYYY-MM-DD`; "before December" asks.                                                                                                                                    |
-| A task that waits on someone | **no: preview-only** | Clarify writes `waiting_on` only with the Waiting status, and an Inbox task's status is written already (`inbox`): applying it would write over a field. It also names a person only Claude chose. It stays preview-only in this slice.                                                                                                      |
-| Link a person                | yes                  | Their address, or their full name of two words or more, is in the item's own words — not only in quoted or forwarded text — and nothing in it says otherwise (slice 2's rules, made again from the text now). Writes `people` only while it is empty.                                                                                        |
-| Add a person                 | yes                  | Their full name and the very address they are added under are both in the item's own words; nobody in People, the Archive included, is them exactly or nearly; no note has their name as its title, in the index or in the tree. Made with that address, then linked.                                                                        |
-| A duplicate                  | yes                  | The same title by the title rule, Claude's pick among the tasks it listed; made again from both notes as read now: the kept task still open, filed alike, not differing on due, waiting-on, defer, people or contexts; and `newerHolds`, computed afresh, empty. The Inbox copy is the one archived, always; the kept task is never written. |
-| A question, or left          | never                | —                                                                                                                                                                                                                                                                                                                                            |
+| Row kind                     | Applied?                        | What the domain confirms without the model                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Make it a task               | yes, where it stays             | The kind is Claude's choice from a closed set. The item is not a task yet and has no type of its own (else the plan asks). Writes `type` and `status` only while both are empty.                                                                                                                                                             |
+| File a note                  | **preview-only for now (#925)** | The project is Claude's choice among the filing targets the domain offered; the re-check finds it still one. Writes `project` only while it is empty.                                                                                                                                                                                        |
+| A due date, on either        | with evidence                   | A date is a free value, not a choice among options, and DFAI has no reader of its own for dates in prose. So it is applied only when the item's own words say it as `YYYY-MM-DD`; "before December" asks.                                                                                                                                    |
+| A task that waits on someone | **no: preview-only**            | Clarify writes `waiting_on` only with the Waiting status, and an Inbox task's status is written already (`inbox`): applying it would write over a field. It also names a person only Claude chose. It stays preview-only in this slice.                                                                                                      |
+| Link a person                | yes                             | Their address, or their full name of two words or more, is in the item's own words — not only in quoted or forwarded text — and nothing in it says otherwise (slice 2's rules, made again from the text now). Writes `people` only while it is empty.                                                                                        |
+| Add a person                 | yes                             | Their full name and the very address they are added under are both in the item's own words; nobody in People, the Archive included, is them exactly or nearly; no note has their name as its title, in the index or in the tree. Made with that address, then linked.                                                                        |
+| A duplicate                  | **preview-only for now (#925)** | The same title by the title rule, Claude's pick among the tasks it listed; made again from both notes as read now: the kept task still open, filed alike, not differing on due, waiting-on, defer, people or contexts; and `newerHolds`, computed afresh, empty. The Inbox copy is the one archived, always; the kept task is never written. |
+| A question, or left          | never                           | —                                                                                                                                                                                                                                                                                                                                            |
 
 ### When it asks at the press
 
@@ -129,6 +130,7 @@ a real day still ahead (`2026-02-30` and a day passed ask).
 
 ### Which copy is archived (rule 8)
 
+(For when #925 turns duplicates on; a duplicate is preview-only in this slice.)
 Always the Inbox item the row is on. A file's modified time is never read
 for it. Where both notes say when they were made (`created`), a kept task
 made after the copy asks; a `created` that reads as no time asks. Where
@@ -164,16 +166,16 @@ the ports of **one guarded path** (`assist-guard.ts`, #911) and nothing else:
 those use-cases are unchanged from the Inbox's own. Nothing under
 `packages/adapters` changes, and there is no new port.
 
-| What                                              | Through                                                                                                                                                                                                                                                               | Undo                                                                                                      |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Make it a task, its due date                      | `clarifyInboxItem`: one byte-preserving save                                                                                                                                                                                                                          | The item's whole text put back                                                                            |
-| File it under its project                         | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                                                                                                                                                                                        | Moved back to exactly where it was, rewriting no link; its text put back                                  |
-| Other notes' links to it, rewritten by the filing | the filing's link update, each note recorded with its text before and after                                                                                                                                                                                           | Each put back byte for byte; refused, naming the note, once it says anything else                         |
-| Link its people                                   | `setNoteProperties` on the item                                                                                                                                                                                                                                       | Part of the item's text put back                                                                          |
-| Add a person                                      | `createPerson`, with their address as the item spells it, then the link above                                                                                                                                                                                         | Put in the system Trash, only while byte for byte as made and no other note links them; otherwise refused |
-| Archive a duplicate                               | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes` (a numbered name when the Archive has its name)                                                                                                                                                       | Moved back from the Archive to exactly where it was, rewriting no link; its text put back                 |
-| Log marks and entries                             | `appendToRuleLog`, rule id `inbox-assist`: `begun` before a row's first write (and before an undo's), a `step` before every write and after each person made, then a closing entry (`run`, `failed` or `undo`, naming the row), or `dismissed` when put aside by hand | —                                                                                                         |
-| One Activity line per apply and undo              | the Activity log, outside the vault                                                                                                                                                                                                                                   | —                                                                                                         |
+| What                                                                           | Through                                                                                                                                                                                                                                                               | Undo                                                                                                      |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Make it a task, its due date                                                   | `clarifyInboxItem`: one byte-preserving save                                                                                                                                                                                                                          | The item's whole text put back                                                                            |
+| File it under its project (preview-only for now, #925)                         | `clarifyInboxItem` → `processInboxItems`: a move, then its link where it lands                                                                                                                                                                                        | Moved back to exactly where it was, rewriting no link; its text put back                                  |
+| Other notes' links to it, rewritten by the filing (preview-only for now, #925) | the filing's link update, each note recorded with its text before and after                                                                                                                                                                                           | Each put back byte for byte; refused, naming the note, once it says anything else                         |
+| Link its people                                                                | `setNoteProperties` on the item                                                                                                                                                                                                                                       | Part of the item's text put back                                                                          |
+| Add a person                                                                   | `createPerson`, with their address as the item spells it, then the link above                                                                                                                                                                                         | Put in the system Trash, only while byte for byte as made and no other note links them; otherwise refused |
+| Archive a duplicate (preview-only for now, #925)                               | `setNoteProperties` (`atlas_duplicate_of`), then `archiveNotes` (a numbered name when the Archive has its name)                                                                                                                                                       | Moved back from the Archive to exactly where it was, rewriting no link; its text put back                 |
+| Log marks and entries                                                          | `appendToRuleLog`, rule id `inbox-assist`: `begun` before a row's first write (and before an undo's), a `step` before every write and after each person made, then a closing entry (`run`, `failed` or `undo`, naming the row), or `dismissed` when put aside by hand | —                                                                                                         |
+| One Activity line per apply and undo                                           | the Activity log, outside the vault                                                                                                                                                                                                                                   | —                                                                                                         |
 
 Every write of an apply, of its rollback and of an undo goes through that
 one guarded path, which for each write, before it is made: (1) logs a `step`
@@ -199,8 +201,8 @@ filing rewrites. For every write, the row's record of what a note says after
 it is exactly what it held the note to plus its own change, never anything
 read later. Never-overwrite does not rest on a rollback.
 
-A row is applied whole or not at all. An edit landing as the note moves stops
-the row: the note goes back where it was **with the edit kept**, and the row
+A row is applied whole or not at all. For the moving kinds, once #925 turns
+them on, an edit landing as the note moves stops the row: the note goes back where it was **with the edit kept**, and the row
 says that what it wrote before the edit is still in it. Its writes are recorded as they land;
 a write that fails takes back every write before it, item first and then any
 person it added, and says so ("Tobias Fenn was added, then taken out again").
@@ -212,7 +214,9 @@ stopped. A rollback refused at its first write says what is left as the row
 changed it.
 
 Undo is one exact undo per row (`exact-undo.ts`; the Inbox's by-hand undo is
-untouched). It reads everything first and refuses, touching nothing, when the
+untouched). For a row applied now, it puts the item's text back where it is
+and takes out anyone the row made; what follows about other notes' links and
+the move back is the moving kinds', switched off until #925. It reads everything first and refuses, touching nothing, when the
 item or a note its filing rewrote says anything else, the item has typing not
 saved, another note has taken its old place, a person it added was edited
 since or is linked from any note but the item, or another note now links to
@@ -241,7 +245,8 @@ put away, it finishes the row it is on and starts no other.
   row left open (a crash, or an undo or rollback that stopped) is shown
   under **Left unfinished**, with what is on disk read against its marks'
   digests, and can be put aside — not undone.
-- A folder a filing or an archive made stays when the note moves back.
+- A folder a filing or an archive made stays when the note moves back (the
+  moving kinds, off until #925).
 - A crash mid-row leaves the row's `begun` mark (the item, the digest of
   what it said, what it was to do) and a `step` mark written **before** each
   person made, each other note's links rewritten, and each move — and one
@@ -285,7 +290,9 @@ put away, it finishes the row it is on and starts no other.
   from prose, a forwarded capture, a duplicate whose copy has notes of its
   own. That is the intent; slice 6 makes questions one tap.
 - Task rows that wait on someone stay preview-only until a slice decides how
-  a status written as `inbox` may be changed.
+  a status written as `inbox` may be changed. Filing under a project and
+  archiving a duplicate stay preview-only until #925 holds the host's move
+  to a digest.
 - The run log gains two line kinds. `undoLastRun` reads only a rule's own
   log, and refuses any line its rule's action never makes, so a rule's "Undo
   last run" never carries one out.
