@@ -109,9 +109,20 @@ describe('settingsSectionsShown: Features (#901)', () => {
     expect(titles(desktop, false)).not.toContain('Features');
   });
 
-  it('keeps Features, and every other section, with Reading switched off', () => {
+  it('keeps Features, and every other section but Kindle, which needs it, with Reading switched off', () => {
     const readingOff = offeredFor(desktop, ['reading']);
-    expect(titles(readingOff)).toEqual(titles(desktop));
+    expect(titles(readingOff)).toEqual(titles(desktop).filter((title) => title !== 'Kindle'));
+  });
+
+  it('takes out Kindle and Slack with their switches, and keeps Claude with Ask and Graph off', () => {
+    expect(titles(offeredFor(desktop, ['kindle']))).toEqual(
+      titles(desktop).filter((title) => title !== 'Kindle'),
+    );
+    expect(titles(offeredFor(desktop, ['slack']))).toEqual(
+      titles(desktop).filter((title) => title !== 'Slack'),
+    );
+    expect(titles(desktop)).toContain('Claude');
+    expect(titles(offeredFor(desktop, ['ask', 'graph']))).toEqual(titles(desktop));
   });
 
   it('makes the lists once for each off list, and again only when that list changes', () => {

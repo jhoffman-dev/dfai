@@ -113,7 +113,7 @@ function containerFor({
   chrome: PageChrome;
 }): ReactNode {
   const { features } = props.wiring.pages;
-  const off = pageTurnedOff(place, features.offered);
+  const off = pageTurnedOff(place, features);
   if (off !== null) {
     return <FeatureOffPage feature={off} chrome={props.chrome} onTurnOn={features.onTurnOn} />;
   }

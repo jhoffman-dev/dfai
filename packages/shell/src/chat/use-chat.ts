@@ -97,6 +97,7 @@ export function useChat({
   activity,
   profile,
   askShown = false,
+  enabled,
 }: {
   ports: ChatPorts;
   store: ChatSettingsStore;
@@ -116,8 +117,17 @@ export function useChat({
   seat: ChatSeat;
   /** Ask (#37) is on screen: it draws the chat too, and says when Claude cannot be reached. */
   askShown?: boolean;
+  /**
+   * Whether Ask and the chat are offered (`offered.claudeChat`) and the
+   * vault's settings have said so. Off — no Claude Code here, Ask and Claude
+   * chat switched off (#901), or not yet known to be on — a kept Ask
+   * tab or a remembered Claude tab asks nothing of Claude and sends no
+   * context, and a turn under way is stopped; the conversation and the draft
+   * are kept for when it is on again.
+   */
+  enabled: boolean;
 }): ChatController {
-  const { open } = seat;
+  const open = seat.open && enabled;
   const [draftText, setDraftText] = useState('');
   const draft = useMemo<ChatDraft>(
     () => ({ text: draftText, onChange: setDraftText }),
@@ -183,9 +193,10 @@ export function useChat({
   // Another vault is another conversation: nothing said about one reaches the other.
   useEffect(() => session.newChat(), [session, vault.vaultKey]);
 
+  useStopWhenOff({ session, enabled });
   useWindowContext({ session, open, shown, api: vault.api, asked: state.items.length > 0 });
   const problem = useProviderProblem({
-    asking: open || askShown || settingsOpen,
+    asking: open || (askShown && enabled) || settingsOpen,
     provider,
     settings,
   });
@@ -296,6 +307,19 @@ function useWindowContext({
       current = false;
     };
   }, [open, asked, key, api, session]);
+}
+
+/** Stops the turn under way once the chat stops being offered: its late answer never lands. */
+export function useStopWhenOff({
+  session,
+  enabled,
+}: {
+  session: Pick<ReturnType<typeof createChatSession>, 'stop'>;
+  enabled: boolean;
+}): void {
+  useEffect(() => {
+    if (!enabled) session.stop();
+  }, [session, enabled]);
 }
 
 /** Whether the chosen way of reaching Claude works, asked each time the panel or Settings opens. */

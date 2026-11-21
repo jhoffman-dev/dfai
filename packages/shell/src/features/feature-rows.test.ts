@@ -18,4 +18,21 @@ describe('featureRows (#901)', () => {
       needs: null,
     });
   });
+
+  it('shows Kindle held off by Reading, saying so, without a switch of its own being flipped', () => {
+    const rows = featureRows(['reading']);
+    expect(rows.find((row) => row.id === 'kindle')).toMatchObject({ on: false, needs: 'Reading' });
+    expect(rows.filter((row) => row.needs !== null).map((row) => row.id)).toEqual(['kindle']);
+  });
+
+  it('shows Kindle off by its own switch with nothing held, and back on with Reading', () => {
+    expect(featureRows(['kindle']).find((row) => row.id === 'kindle')).toMatchObject({
+      on: false,
+      needs: null,
+    });
+    expect(featureRows([]).find((row) => row.id === 'kindle')).toMatchObject({
+      on: true,
+      needs: null,
+    });
+  });
 });
