@@ -30,6 +30,7 @@ import {
 } from './apply-inbox-assist.ts';
 import { INBOX_ASSIST_RULE } from './assist-log.ts';
 import { previewInboxAssist } from './preview-inbox-assist.ts';
+import { VAULT_FS_METHODS } from './assist-guard.ts';
 import { undoAssistRow, undoAssistRows } from './undo-inbox-assist.ts';
 import { findUnfinishedAssist } from './assist-unfinished.ts';
 import { appendToRuleLog } from '../automations/automation-log.ts';
@@ -1119,14 +1120,12 @@ const LINKED: Record<string, string> = {
     'See [[Inbox/Call Mara]], [[Inbox/Payroll article|the article]], [[Inbox/Lunch with Tobias]] and [[Inbox/Renew Larkspur contract]].\n',
 };
 const ROW_KINDS = [CALL, ARTICLE, LUNCH, RENEW] as const;
-const WRITES = [
-  'writeTextFile',
-  'createNote',
-  'createFolder',
-  'moveEntry',
-  'trashEntry',
-  'writeBinaryFile',
-] as const;
+/** Every method of the vault port that is not a read, from the guard's own placing of each (#911, round 4). */
+const WRITES = Object.entries(VAULT_FS_METHODS).flatMap(([method, kind]) =>
+  kind === 'read' ? [] : [method],
+);
+/** Every method of the vault port, watched: a read changes nothing, but tells where the row is. */
+const EVERY_METHOD = Object.keys(VAULT_FS_METHODS);
 /** The log and the folders it lives in: written beside the guard, never a note. */
 const ofTheLog = (path: string) => path === '.atlas' || path.startsWith('.atlas/');
 
@@ -1134,7 +1133,7 @@ const ofTheLog = (path: string) => path === '.atlas' || path.startsWith('.atlas/
 function watched(v: ReturnType<typeof setUp>) {
   const calls: { method: string; args: Record<string, unknown>; log: string }[] = [];
   const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
-  for (const method of [...WRITES, 'readTextFile', 'readNotes'] as const) {
+  for (const method of EVERY_METHOD) {
     const inner = fs[method]!;
     fs[method] = async (args: unknown) => {
       const named = typeof args === 'string' ? { path: args } : (args as Record<string, unknown>);
@@ -1149,7 +1148,7 @@ function watched(v: ReturnType<typeof setUp>) {
 function escapes(calls: ReturnType<typeof watched>): string[] {
   const found: string[] = [];
   calls.forEach(({ method, args, log }, at) => {
-    if (!(WRITES as readonly string[]).includes(method)) return;
+    if (!WRITES.includes(method)) return;
     const path = String(args['path'] ?? args['from']);
     if (ofTheLog(path)) return;
     const last = parseAssistLog(log).at(-1);
@@ -1227,8 +1226,7 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
       expect(escapes(calls).join(' | '), row).toBe('');
       const writes = calls.filter(
         ({ method, args }) =>
-          (WRITES as readonly string[]).includes(method) &&
-          !ofTheLog(String(args['path'] ?? args['from'])),
+          WRITES.includes(method) && !ofTheLog(String(args['path'] ?? args['from'])),
       );
       checked += writes.length;
       // Each write of the apply failing in turn: the rollback's writes too go through the guard.
@@ -1243,9 +1241,7 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
           await undoAssistRow(v.ports, { undo: outcome.undo, notePaths: v.notePaths() });
         }
         expect(escapes(seen), `${row}, write ${nth} failing`).toEqual([]);
-        checked += seen.filter(({ method }) =>
-          (WRITES as readonly string[]).includes(method),
-        ).length;
+        checked += seen.filter(({ method }) => WRITES.includes(method)).length;
       }
     }
     // The test is about something: it looked at many writes.
@@ -1294,7 +1290,7 @@ describe('review #911 round 3: a person’s edit, at any moment of a row, is nev
             let calls = 0;
             let edited: { path: string; text: string } | null = null;
             const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
-            for (const method of [...WRITES, 'readTextFile', 'readNotes'] as const) {
+            for (const method of EVERY_METHOD) {
               const inner = fs[method]!;
               fs[method] = async (args: unknown) => {
                 const answer = await inner(args);
