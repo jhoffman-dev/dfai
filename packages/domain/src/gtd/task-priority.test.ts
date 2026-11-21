@@ -30,7 +30,23 @@ describe('what a priority is', () => {
     expect(taskPriorityOf(2)).toBe(2);
     expect(taskPriorityOf('3')).toBe(3);
     expect(taskPriorityOf(' 4 ')).toBe(4);
-    for (const none of [null, undefined, '', '0', '5', '2.5', '1x', 'P1', 'high', 1.5, [2]]) {
+    // A list of one reads as its item, as the index reads a one-item list.
+    expect(taskPriorityOf([2])).toBe(2);
+    expect(taskPriorityOf(['3'])).toBe(3);
+    for (const none of [
+      null,
+      undefined,
+      '',
+      '0',
+      '5',
+      '2.5',
+      '1x',
+      'P1',
+      'high',
+      1.5,
+      [1, 2],
+      [[2]],
+    ]) {
       expect(taskPriorityOf(none)).toBeNull();
     }
   });

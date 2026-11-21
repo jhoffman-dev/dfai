@@ -30,11 +30,17 @@ export function isTaskPriority(value: unknown): value is TaskPriority {
 const PRIORITY_TEXT = /^[1-4]$/;
 
 /**
- * The priority a value holds as it is read back — the number, or its digit
- * as text, which is how the index and a typed field hand it over — or null
+ * The priority a value holds as it is read back — the number, its digit as
+ * text (as the index and a typed field hand it over), or a list of one of
+ * those, read as its one item as the index reads a one-item list — or null
  * for none, or for anything that is not one of the four.
  */
 export function taskPriorityOf(value: unknown): TaskPriority | null {
+  if (Array.isArray(value)) return value.length === 1 ? scalarPriorityOf(value[0]) : null;
+  return scalarPriorityOf(value);
+}
+
+function scalarPriorityOf(value: unknown): TaskPriority | null {
   if (isTaskPriority(value)) return value;
   if (typeof value !== 'string' || !PRIORITY_TEXT.test(value.trim())) return null;
   return Number(value.trim()) as TaskPriority;

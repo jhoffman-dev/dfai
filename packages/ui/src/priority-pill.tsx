@@ -82,11 +82,23 @@ export function priorityPicker(value: unknown): {
 /** How long a value of the note's own is shown in "Other: …" before it is cut short. */
 const SHOWN_LENGTH = 24;
 
-/** A value of the note's own as "Other: …" shows it: words as written, anything else as compact JSON, cut short. */
+/**
+ * A value of the note's own as "Other: …" shows it, cut short: words as
+ * written, a list as `[1, 2]` (a list of one as its item, as the index reads
+ * it), anything else as compact JSON.
+ */
 function shownValue(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'string' ? value.trim() : (JSON.stringify(value) ?? String(value));
+  const text = valueText(value);
   return text.length > SHOWN_LENGTH ? `${text.slice(0, SHOWN_LENGTH - 1)}…` : text;
+}
+
+function valueText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value.length === 1 ? valueText(value[0]) : `[${value.map(valueText).join(', ')}]`;
+  }
+  return JSON.stringify(value) ?? String(value);
 }
 
 /**

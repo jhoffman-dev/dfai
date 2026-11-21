@@ -145,7 +145,10 @@ async function readPage({
       due: cell(row, 'due'),
       projectWritten: cell(row, 'projectWritten'),
       dueWritten: cell(row, 'dueWritten'),
-      ...(ranksTasks && { priority: cell(row, 'priority') }),
+      ...(ranksTasks && {
+        priority: cell(row, 'priority'),
+        priorityWritten: cell(row, 'priorityWritten'),
+      }),
     });
     return { item, key: inboxKeyOf({ path, modified: cell(row, 'modified') }) };
   });

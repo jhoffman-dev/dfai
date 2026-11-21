@@ -257,10 +257,12 @@ function PropertyEditor({
   // "[object Object]", and typing one character into that would write the
   // string over the structure and take the dashboard with it. It is shown
   // instead, and edited in the frontmatter where it can be seen whole.
+  // A task's priority is picked whatever it holds (#913): a list or a map of
+  // the note's own shows as "Other: …", kept until a pick replaces it.
+  if (row.editor === 'priority') return <PriorityEditor {...props} />;
   if (isStructured(row.value)) {
     return <StructuredValue id={id} value={row.value} />;
   }
-  if (row.editor === 'priority') return <PriorityEditor {...props} />;
 
   switch (row.def.kind) {
     case 'checkbox':

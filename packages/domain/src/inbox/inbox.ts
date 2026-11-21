@@ -341,6 +341,7 @@ export function compileInboxQuery({
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
       `  ${singleValue(TASK_KEYS.priority)} AS "priority",`,
+      `  ${allItems(TASK_KEYS.priority)} AS "priorityWritten",`,
       `  files.modified AS "modified",`,
       `  ${holds('files.path', IMPORT_CONTRACT_KEY)} AS "importDeclared",`,
       `  ${allItems(FILED_UNDER_KEY)} AS "projectWritten",`,
@@ -415,6 +416,7 @@ export function inboxItem(row: {
   defer?: unknown;
   due?: unknown;
   priority?: unknown;
+  priorityWritten?: unknown;
   projectWritten?: unknown;
   dueWritten?: unknown;
 }): InboxItem {
@@ -454,6 +456,7 @@ function inboxTask(row: {
   defer?: unknown;
   due?: unknown;
   priority?: unknown;
+  priorityWritten?: unknown;
 }): InboxTask {
   return {
     status: gtdStatusOf(row.status),
@@ -465,9 +468,24 @@ function inboxTask(row: {
     // Absent where the vault does not rank its tasks 1 to 4: its row offers no priority.
     ...(Object.hasOwn(row, 'priority') && {
       priority: taskPriorityOf(row.priority),
-      priorityWritten: textOrNull(row.priority),
+      priorityWritten: priorityAsWritten(row.priorityWritten ?? row.priority),
     }),
   };
+}
+
+/**
+ * What a task holds under `priority`, from its items as the statement joined
+ * them: one item as written, several as `[1, 2]`, a mapping as its JSON; null
+ * for nothing. What its Clarify picker shows as "Other: …".
+ */
+function priorityAsWritten(joined: unknown): string | null {
+  if (typeof joined !== 'string') return null;
+  const items = joined
+    .split('\u001f')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+  if (items.length === 0) return null;
+  return items.length === 1 ? (items[0] ?? null) : `[${items.join(', ')}]`;
 }
 
 const pathOrNull = (value: unknown): VaultPath | null => {
