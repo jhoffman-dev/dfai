@@ -4,7 +4,8 @@
  * they are done. Whether they may still be done is `assist-recheck.ts`'s.
  *
  * Every change only fills what is empty; nothing written is ever written
- * over. Three kinds of row are applied:
+ * over. Three kinds of row are built, of which Apply writes only what stays
+ * where the item is for now (`APPLIABLE_ASSIST_KINDS`, #925):
  *
  * - **a task**: made a task where it is not one yet, given the project and
  *   the due date the plan found empty, and linked to its people;

@@ -135,6 +135,28 @@ made after the copy asks; a `created` that reads as no time asks. Where
 either says nothing, the copy is the one in the Inbox: Inbox captures carry
 no `created`, and the kept task is, by the title rule, not in the Inbox.
 
+### What Apply writes now, and what waits (#925)
+
+Apply writes only what stays where the item is: making an Inbox task a task,
+filling an empty due date, linking a person and adding one. Each of those is
+a save in place (or an exclusive create), held end to end by the host's own
+check of the text. A row that would **file the item under a project** or
+**archive a duplicate** moves the note, and the host's `move_entry` has no
+such check: the guard reads the source just before the move, but an edit in
+the instant between that read and the move travels with the note. It is
+never lost — the row then stops and the note goes back with the edit kept —
+but it is not prevented, the real host is not exercised by the tests, the
+link-rewriting path is shared with #916, and a move can leave a folder it
+made. So those rows are shown with their plan and why ("Filing is not
+applied automatically yet."), with no Apply, and Apply all skips them. One
+domain list, `APPLIABLE_ASSIST_KINDS`, says which kinds Apply writes; #925
+turns the two moving kinds on by adding them once the host's move is held to
+a digest. Their code and every test stay, run with every kind.
+
+In practice: an Inbox task, or a note made a task where it is, with a due
+date and its people, is applied; a task or note that must move to its
+project, and a duplicate, are preview-only.
+
 ### What it writes, and how it is undone
 
 Every write goes through a use-case the Inbox already uses by hand, handed
@@ -164,7 +186,12 @@ other text before writing, and handing that text to the host
 (`expectedText`), which refuses it too if it changed in between, within the
 disk's timestamp tick as well. A note the row never read is not written. A
 create is exclusive; a move and a trash are held to their source's text,
-read just before. (3) records it: each note's text before the row first wrote
+read just before. The guard only adds to the checks a write asks for: a save
+keeps the time its caller read the note at, and a trash every note its
+caller held it to. Its ports are explicit, each port method placed as a read,
+a guarded write or refused, so a method added to a port does not compile
+until it is placed; the modules of Inbox assist hold only a read-only vault,
+a guard factory and the log. (3) records it: each note's text before the row first wrote
 it and after its last write, each note made, where each moved. Typing a pane
 has not saved is never saved from it, and the duplicate's kept task is never
 written. That covers the item's own self-link and every other note's links a
@@ -198,8 +225,9 @@ was. Refused at its first write, nothing was touched. Stopped later, it says
 Mara.md."), as a warning in Activity too, logs a `step` with what it put back
 (and the item's digest), leaves the row open, keeps Undo on offer, and undoing
 again finishes from where it stopped — a note this undo already put back is
-never checked or touched again, whatever it says since (the log says which,
-across a restart). An undo logs `begun` before its first write, a `step`
+never checked or touched again, whatever it says since. While the panel
+holds the undo, it knows which; the log records them too, and a later Undo
+of the same held undo reads them from it. An undo logs `begun` before its first write, a `step`
 before each, and a closing `undo` entry. **Undo all** takes the rows back the last
 applied first, each on its own. "Apply all" checks for an abort between rows:
 put away, it finishes the row it is on and starts no other.
@@ -209,7 +237,10 @@ put away, it finishes the row it is on and starts no other.
 - Undo is held by the panel for as long as it is shown. Dismissed, or after
   a restart, the log still says what was done (`assisted` lines with each
   item's digest), but no Undo is offered; slice 5's "Undo this run" needs it
-  durable, and its own record.
+  durable, and its own record. What survives a restart is the log alone: a
+  row left open (a crash, or an undo or rollback that stopped) is shown
+  under **Left unfinished**, with what is on disk read against its marks'
+  digests, and can be put aside — not undone.
 - A folder a filing or an archive made stays when the note moves back.
 - A crash mid-row leaves the row's `begun` mark (the item, the digest of
   what it said, what it was to do) and a `step` mark written **before** each

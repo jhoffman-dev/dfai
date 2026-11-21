@@ -21,6 +21,8 @@ const CALL = 'Inbox/Call Mara Quill.md';
 const LUNCH = 'Inbox/Lunch with Tobias Fenn.md';
 const RENEW = 'Inbox/Renew Larkspur contract.md';
 const JUNK = 'Inbox/Buy now.md';
+/** A task to file under its project: shown, not applied, until #925. */
+const RATES = 'Inbox/Payroll rates.md';
 const PROJECT = 'Projects/Larkspur Payroll.md';
 const KEPT = 'Tasks/Renew Larkspur contract.md';
 const TOBIAS = 'People/Tobias Fenn.md';
@@ -29,6 +31,7 @@ const NOTES: Record<string, string> = {
   [LUNCH]: 'Lunch with Tobias Fenn <tobias@example.org> on Friday.\n',
   [RENEW]: '',
   [JUNK]: 'Buy now!\n',
+  [RATES]: 'New payroll rates for Larkspur.\n',
   [PROJECT]: '---\ntype: project\n---\n\n# Larkspur Payroll\n',
   [KEPT]: '---\ntype: task\nstatus: next-action\n---\n\nRenew it.\n',
   'People/Mara Quill.md': '---\ntype: person\nemail: mara.quill@example.com\n---\n',
@@ -49,13 +52,13 @@ const entry = (item: string, extra: Record<string, unknown>) => ({
 const ANSWER = JSON.stringify({
   items: [
     entry(CALL, {
-      projects: [PROJECT],
       due: '2026-12-01',
       people: [{ name: 'Mara Quill', email: null, person: 'People/Mara Quill.md' }],
     }),
     entry(LUNCH, { people: [{ name: 'Tobias Fenn', email: 'tobias@example.org', person: null }] }),
     entry(RENEW, { duplicateOf: KEPT }),
     entry(JUNK, { kind: 'junk' }),
+    entry(RATES, { projects: [PROJECT] }),
   ],
 });
 
@@ -134,8 +137,6 @@ function writtenSince(host: Host, before: ReturnType<typeof mark>): string[] {
 }
 
 const LOG = '.atlas/automations/log/inbox-assist.md';
-/** Where Call Mara Quill is filed: its type's home for the day, as `dated` writes it. */
-const FILED = 'Tasks/YYYY/MM/Call Mara Quill.md';
 
 async function setUp(page: Parameters<Parameters<typeof test>[2]>[0]['page']) {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -179,18 +180,24 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
   const junk = suggestions.getByRole('listitem', { name: 'Buy now' });
   await expect(junk).toContainText('Question');
   await expect(junk.getByRole('button')).toHaveCount(0);
+  // The rows that would move a note are shown, with why, and nothing to press (#925).
+  for (const [name, why] of [
+    ['Payroll rates', 'Filing is not applied automatically yet.'],
+    ['Renew Larkspur contract', 'Archiving a duplicate is not applied automatically yet.'],
+  ] as const) {
+    const shown = suggestions.getByRole('listitem', { name });
+    await expect(shown).toContainText(why);
+    await expect(shown.getByRole('button')).toHaveCount(0);
+  }
 
   const before = mark(host);
   await call.getByRole('button', { name: 'Apply' }).click();
-  await expect(call).toContainText(
-    'Made it a task under Larkspur Payroll, due 2026-12-01. Linked Mara Quill.',
-  );
+  await expect(call).toContainText('Made it a task, due 2026-12-01. Linked Mara Quill.');
   const undo = call.getByRole('button', { name: 'Undo' });
   await expect(undo).toBeFocused();
-  await expect.poll(() => vault.exists(CALL)).toBe(false);
-  // Its fields in one write; filed: a move, then its project linked where it lands; its people
-  // linked in a third write; the log made, in its folder.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist applied “Call Mara Quill”');
+  // Made a task where it is: an Inbox task is not filed by Apply yet.
+  expect(await vault.exists(CALL)).toBe(true);
   const applying = writtenSince(host, before);
   // The log made, in its folders, with the row begun, before anything else; closed after everything.
   expect(applying.slice(0, 3)).toEqual([
@@ -199,98 +206,64 @@ test('applies one row, then undoes it, each with exactly its writes', async ({ p
     `create_note ${LOG}`,
   ]);
   expect(applying.at(-1)).toBe(`write_text_file ${LOG}`);
-  expect(notesWritten(applying)).toEqual([
-    // Made a task, its due date written; filed into its home and its project linked there.
-    `write_text_file ${CALL}`,
-    'create_folder Tasks/YYYY',
-    'create_folder Tasks/YYYY/MM',
-    `move_entry ${CALL} -> ${FILED}`,
-    `write_text_file ${FILED}`,
-    // Mara linked under people.
-    `write_text_file ${FILED}`,
-  ]);
+  // Made a task, its due date written; Mara linked under people. Nothing moved.
+  expect(notesWritten(applying)).toEqual([`write_text_file ${CALL}`, `write_text_file ${CALL}`]);
 
   const beforeUndo = mark(host);
   await undo.press('Enter');
   await expect(call).toContainText('Put back as it was.');
   await expectAsSetUp(vault);
-  // Moved back, its bytes written back, and one line added to the log.
   await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
-  // Its bytes written back where it is, then moved back rewriting no link; the undo logged. Nothing else.
+  // Its bytes written back, the undo logged. Nothing else.
   const undoing = writtenSince(host, beforeUndo);
   expect(undoing.at(-1)).toBe(`write_text_file ${LOG}`);
-  expect(notesWritten(undoing)).toEqual([
-    `write_text_file ${FILED}`,
-    `move_entry ${FILED} -> ${CALL}`,
-  ]);
+  expect(notesWritten(undoing)).toEqual([`write_text_file ${CALL}`]);
 });
 
-test('applies all sure rows, skipping the question, then undoes all, every byte back', async ({
+test('applies all sure rows, skipping the question and the rows that move, then undoes all', async ({
   page,
 }) => {
   const { vault, host, suggestions } = await setUp(page);
   const before = mark(host);
   await suggestions.getByRole('button', { name: 'Apply all sure ones' }).click();
   const lunch = suggestions.getByRole('listitem', { name: 'Lunch with Tobias Fenn' });
-  const renew = suggestions.getByRole('listitem', { name: 'Renew Larkspur contract' });
+  const call = suggestions.getByRole('listitem', { name: 'Call Mara Quill' });
+  await expect(call).toContainText('Linked Mara Quill.');
   await expect(lunch).toContainText('Added Tobias Fenn.');
-  await expect(renew).toContainText('Archived as a duplicate of Renew Larkspur contract.');
-  await expect(suggestions.getByRole('listitem', { name: 'Call Mara Quill' })).toContainText(
-    'Linked Mara Quill.',
-  );
   await expect.poll(() => vault.exists(TOBIAS)).toBe(true);
-  // The duplicate is applied last; its Activity line is said once its log line is written.
+  // Lunch is applied last; its Activity line is said once its log line is written.
   await expect
     .poll(() => host.activityLog())
-    .toContain('Inbox assist applied “Renew Larkspur contract”');
-  await expectFile(vault, KEPT).toBe(NOTES[KEPT]);
-  await expectFile(vault, JUNK).toBe(NOTES[JUNK]);
-  // Call Mara: three writes and a move, as above. Tobias's item: made a task, then he is made and
-  // linked. The duplicate: its stamp, then archived (a move and the Archive's stamp). The log: made
-  // once, then added to twice.
+    .toContain('Inbox assist applied “Lunch with Tobias Fenn”');
+  // Neither row that would move a note was touched.
+  for (const path of [RENEW, RATES, KEPT, JUNK]) await expectFile(vault, path).toBe(NOTES[path]);
   const applying = writtenSince(host, before);
   expect(applying.at(-1)).toBe(`write_text_file ${LOG}`);
   expect(notesWritten(applying)).toEqual([
     // Call Mara, as above.
     `write_text_file ${CALL}`,
-    'create_folder Tasks/YYYY',
-    'create_folder Tasks/YYYY/MM',
-    `move_entry ${CALL} -> ${FILED}`,
-    `write_text_file ${FILED}`,
-    `write_text_file ${FILED}`,
+    `write_text_file ${CALL}`,
     // Lunch: made a task; Tobias made; linked.
     `write_text_file ${LUNCH}`,
     `create_note ${TOBIAS}`,
     `write_text_file ${LUNCH}`,
-    // The duplicate: stamped; archived (its folders, the move, the Archive's stamp).
-    `write_text_file ${RENEW}`,
-    'create_folder Archive',
-    'create_folder Archive/Inbox',
-    `move_entry ${RENEW} -> Archive/${RENEW}`,
-    `write_text_file Archive/${RENEW}`,
   ]);
 
   const beforeUndo = mark(host);
   await suggestions.getByRole('button', { name: 'Undo all' }).click();
-  await expect(renew).toContainText('Put back as it was.');
   await expect(lunch).toContainText('Put back as it was.');
   // Call Mara is undone last; its Activity line is said once its log line is written.
-  await expect(suggestions.getByRole('listitem', { name: 'Call Mara Quill' })).toContainText(
-    'Put back as it was.',
-  );
+  await expect(call).toContainText('Put back as it was.');
   await expect.poll(() => host.activityLog()).toContain('Inbox assist undid “Call Mara Quill”');
   await expectAsSetUp(vault);
   expect(host.trashed()).toEqual([TOBIAS]);
-  // The last applied first: each written back, then moved back, and logged; Tobias to the Trash.
+  // The last applied first: each written back, and logged; Tobias to the Trash.
   const undoing = writtenSince(host, beforeUndo);
   expect(undoing.at(-1)).toBe(`write_text_file ${LOG}`);
   expect(notesWritten(undoing)).toEqual([
-    `write_text_file Archive/${RENEW}`,
-    `move_entry Archive/${RENEW} -> ${RENEW}`,
     `write_text_file ${LUNCH}`,
     `trash_entry ${TOBIAS}`,
-    `write_text_file ${FILED}`,
-    `move_entry ${FILED} -> ${CALL}`,
+    `write_text_file ${CALL}`,
   ]);
 });
 
