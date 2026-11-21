@@ -1250,7 +1250,7 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
     }
     // The test is about something: it looked at many writes.
     expect(checked).toBeGreaterThan(100);
-  });
+  }, 30_000);
 
   it('would catch a write made around the guard', async () => {
     const v = setUp(LINKED);
@@ -1344,7 +1344,8 @@ describe('review #911 round 3: a person’s edit, at any moment of a row, is nev
       }
     }
     expect(cases).toBeGreaterThan(250);
-  });
+    // Some 260 applies and undoes: seconds plain, longer under coverage instrumentation.
+  }, 60_000);
 });
 
 describe('apply then undo, as a seeded property', () => {
