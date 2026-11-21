@@ -186,8 +186,11 @@ rather than the platform. A second set of checks beside it would drift from it.
    `chatWork` — the chat's reachability check, window context and turns —
    `automationsRunner`, `granolaPull`, `meetingSync` and `meetingImport`),
    and `workOffered` holds them until the read answers. Runners read
-   `working`, which holds only the work entries, so a runner cannot be fed
-   from a row's or a page's entry. A failed read still answers, and
+   `working`, which holds only the work entries, each a `WorkSwitch`: a
+   branded boolean only `workOffered` makes, which every runner takes for
+   its `enabled`, so a runner can be fed neither from a row's or a page's
+   entry nor from `offered.*` or a literal (tests make one with
+   `workSwitch`). A failed read still answers, and
    with no vault open nothing runs. The feature chunks' preloads already wait
    for the read. So a Slack link pasted before the answer is a plain paste,
    whatever the file says, and Kindle's first sync comes after it.
