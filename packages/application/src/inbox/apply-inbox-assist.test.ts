@@ -4,7 +4,7 @@
  * the real preview with a scripted Claude, then applied: what is asserted is
  * every note's bytes afterwards. All names are made up.
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   createVaultPath,
   inboxItem,
@@ -13,6 +13,7 @@ import {
   parseRunLog,
   digestOf,
   isInInbox,
+  type AssistApplyKind,
   type AssistEvidence,
   type AssistIntent,
   type AssistRow,
@@ -97,8 +98,24 @@ const item = (path: string): InboxItem =>
 
 type Failing = { method: 'createNote' | 'writeTextFile' | 'moveEntry'; nth: number };
 
+/**
+ * What a harness previews and applies by default: the answers, the items
+ * asked about, and the kinds Apply writes — every kind, or `null` for the
+ * production list, handed nothing.
+ */
+interface Scenario {
+  readonly answers: readonly unknown[];
+  readonly paths: readonly string[];
+  readonly appliable: ReadonlySet<AssistApplyKind> | null;
+}
+const EVERY_KIND_SCENARIO: Scenario = {
+  answers: ANSWERS,
+  paths: Object.keys(VAULT).filter((at) => at.startsWith('Inbox/')),
+  appliable: EVERY_ASSIST_KIND,
+};
+
 /** The vault, its ports as Apply is handed them, and a way to fail one write. */
-function setUp(notes: Record<string, string> = VAULT) {
+function setUp(notes: Record<string, string> = VAULT, scenario: Scenario = EVERY_KIND_SCENARIO) {
   const vault = automationVault({ notes, today: TODAY });
   const activity = recordingActivity();
   let failing: Failing | null = null;
@@ -139,8 +156,8 @@ function setUp(notes: Record<string, string> = VAULT) {
   };
   const notePaths = () => [...vault.files.keys()].map((path) => createVaultPath(path));
   const preview = async (
-    answers: readonly unknown[] = ANSWERS,
-    paths = Object.keys(VAULT).filter((at) => at.startsWith('Inbox/')),
+    answers: readonly unknown[] = scenario.answers,
+    paths: readonly string[] = scenario.paths,
   ) => {
     const model = fakeModel([[{ type: 'text', text: JSON.stringify({ items: answers }) }]]);
     const outcome = await previewInboxAssist(
@@ -162,7 +179,7 @@ function setUp(notes: Record<string, string> = VAULT) {
     const { row, evidence } = (previewed ?? (await preview())).of(path);
     return (
       await applyAssistRow(ports, {
-        appliable: EVERY_ASSIST_KIND,
+        ...(scenario.appliable !== null && { appliable: scenario.appliable }),
         row,
         evidence,
         notePaths: notePaths(),
@@ -1232,6 +1249,35 @@ const LINKED: Record<string, string> = {
     'See [[Inbox/Call Mara]], [[Inbox/Payroll article|the article]], [[Inbox/Lunch with Tobias]] and [[Inbox/Renew Larkspur contract]].\n',
 };
 const ROW_KINDS = [CALL, ARTICLE, LUNCH, RENEW] as const;
+
+/**
+ * The rows as they ship (#911 round 4): applied on the production list.
+ * Send Mara stays in the Inbox, its due date in its own words and Mara, who
+ * is in People already, linked; Lunch makes Tobias. Both linked from Week.
+ */
+const SEND = 'Inbox/Send Mara the rates.md';
+const SHIPPED_ROWS = [SEND, LUNCH] as const;
+const SHIPPED_NOTES: Record<string, string> = {
+  ...LINKED,
+  [SEND]: 'Send Mara Quill <mara.quill@example.com> the new rates by 2026-12-04.\n',
+  'Notes/Week.md': `${LINKED['Notes/Week.md']!}Also [[Inbox/Send Mara the rates]].\n`,
+};
+const SHIPPED_SCENARIO: Scenario = {
+  answers: [
+    entry(SEND, { due: '2026-12-04', people: [{ name: 'Mara Quill', email: null, person: MARA }] }),
+    ...ANSWERS.filter((answer) => (answer as { item: string }).item === LUNCH),
+  ],
+  paths: [...SHIPPED_ROWS],
+  appliable: null,
+};
+
+/** Every kind over its rows, and the production list over the rows that ship. */
+const SWEPT = [
+  { name: 'every kind', notes: LINKED, scenario: EVERY_KIND_SCENARIO, rows: ROW_KINDS },
+  { name: 'as shipped', notes: SHIPPED_NOTES, scenario: SHIPPED_SCENARIO, rows: SHIPPED_ROWS },
+] as const;
+const SWEPT_ROWS = SWEPT.flatMap((each) => each.rows.map((row) => [each.name, row] as const));
+const sweptOf = (name: string) => SWEPT.find((each) => each.name === name)!;
 /** Every method of the vault port that is not a read, from the guard's own placing of each (#911, round 4). */
 const WRITES = Object.entries(VAULT_FS_METHODS).flatMap(([method, kind]) =>
   kind === 'read' ? [] : [method],
@@ -1326,13 +1372,14 @@ describe('review #911 round 3: a rollback that keeps an edit takes out whom it m
 });
 
 describe('review #911 round 3: no write of a row escapes the one guarded path (A)', () => {
-  it.each(ROW_KINDS)(
-    '%s: in its apply, its rollback after a failure at every position, and its undo',
-    async (row) => {
+  it.each(SWEPT_ROWS)(
+    '%s, %s: in its apply, its rollback after a failure at every position, and its undo',
+    async (name, row) => {
+      const { notes, scenario } = sweptOf(name);
       let checked = 0;
       {
         // A clean apply and its undo, and how many writes the apply makes.
-        const clean = setUp(LINKED);
+        const clean = setUp(notes, scenario);
         const previewed = await clean.preview();
         const calls = watched(clean);
         const applied = appliedOf(await clean.apply(row, previewed));
@@ -1346,7 +1393,7 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
         // Each write of the apply failing in turn: the rollback's writes too go through the guard.
         // Past the apply's own writes, the apply simply succeeds: harmless, and counted too.
         for (let nth = 1; nth <= writes.length; nth += 1) {
-          const v = setUp(LINKED);
+          const v = setUp(notes, scenario);
           const again = await v.preview();
           const seen = watched(v);
           failingWrite(v, nth);
@@ -1387,16 +1434,17 @@ describe('review #911 round 3: no write of a row escapes the one guarded path (A
  * the bytes; resolves to how many calls it tried.
  */
 async function sweepEdits(
-  row: (typeof ROW_KINDS)[number],
+  { notes, scenario }: { notes: Record<string, string>; scenario: Scenario },
+  row: string,
   target: 'item' | 'Notes/Week.md',
   phase: 'apply' | 'undo',
 ): Promise<number> {
   // What a clean apply of the row leaves each note saying: an applied row whose undo was refused stays so.
-  const clean = setUp(LINKED);
+  const clean = setUp(notes, scenario);
   appliedOf(await clean.apply(row, await clean.preview()));
   const appliedState = clean.snapshot();
   for (let k = 1; ; k += 1) {
-    const v = setUp(LINKED);
+    const v = setUp(notes, scenario);
     const before = v.snapshot();
     const previewed = await v.preview();
     const applied = phase === 'undo' ? appliedOf(await v.apply(row, previewed)) : null;
@@ -1453,15 +1501,84 @@ function editAfterCall(
   return edited;
 }
 
+/** How many edit-at-a-call cases the sweep tries, each list over its rows. */
+const SWEPT_EDITS = { every: 296, shipped: 80 };
+
 describe('review #911 round 3: a person’s edit, at any moment of a row, is never lost (11)', () => {
-  const cases = ROW_KINDS.flatMap((row) =>
+  const cases = SWEPT_ROWS.flatMap(([name, row]) =>
     (['item', 'Notes/Week.md'] as const).flatMap((target) =>
-      (['apply', 'undo'] as const).map((phase) => [row, target, phase] as const),
+      (['apply', 'undo'] as const).map((phase) => [name, row, target, phase] as const),
     ),
   );
-  it.each(cases)('%s, an edit on %s, during %s: exact bytes', async (row, target, phase) => {
-    // About something: the row makes several host calls, and each was tried.
-    expect(await sweepEdits(row, target, phase)).toBeGreaterThan(3);
+  // Every host call of every case, counted: the sweep is as wide as it says.
+  const tried = new Map<string, number>();
+  afterAll(() => {
+    // Asserted only when every case ran: a filtered run counts less, and says nothing.
+    if (tried.size !== cases.length) return;
+    const total = (name: string) =>
+      [...tried].filter(([key]) => key.startsWith(name)).reduce((sum, [, count]) => sum + count, 0);
+    expect({ every: total('every kind'), shipped: total('as shipped') }).toEqual(SWEPT_EDITS);
+  });
+  it.each(cases)(
+    '%s, %s, an edit on %s, during %s: exact bytes',
+    async (name, row, target, phase) => {
+      const calls = await sweepEdits(sweptOf(name), row, target, phase);
+      tried.set(`${name} ${row} ${target} ${phase}`, calls);
+      // About something: even an undo in place reads, checks and writes, and each call was tried.
+      expect(calls).toBeGreaterThanOrEqual(3);
+    },
+  );
+});
+
+describe('review #911 round 4: a crash at every host call of a row that ships leaves a trace', () => {
+  /** Previews and applies `row`, the process gone just after the `k`th host call; resolves to whether it was. */
+  async function crashAfter(v: ReturnType<typeof setUp>, row: string, k: number) {
+    const fs = v.ports.fs as unknown as Record<string, (args: unknown) => Promise<unknown>>;
+    const kept = new Map(EVERY_METHOD.map((method) => [method, fs[method]!]));
+    let calls = 0;
+    for (const [method, inner] of kept) {
+      fs[method] = async (args: unknown) => {
+        if (calls >= k) throw new Error('the app is gone');
+        calls += 1;
+        return inner(args);
+      };
+    }
+    try {
+      await v.apply(row, await v.preview());
+    } catch {
+      // The crash itself: whatever it stopped is what the next start finds.
+    } finally {
+      for (const [method, inner] of kept) fs[method] = inner;
+    }
+    return calls >= k;
+  }
+
+  it.each(SHIPPED_ROWS)('%s: every note changed is named under Left unfinished', async (row) => {
+    let crashes = 0;
+    for (let k = 1; ; k += 1) {
+      const v = setUp(SHIPPED_NOTES, SHIPPED_SCENARIO);
+      const before = new Map([...notesBut(v.files)]);
+      // Counted from the preview's first read: a crash while previewing writes nothing either.
+      if (!(await crashAfter(v, row, k))) break;
+      crashes += 1;
+      const changed = [...notesBut(v.files)].some(([path, text]) => before.get(path) !== text);
+      const left = await findUnfinishedAssist(v.ports);
+      const where = `${row}, crash after call ${k}`;
+      const applied = parseRunLog(v.files.get(LOG) ?? '').some((entry) => entry.kind === 'run');
+      if (applied) {
+        // Closed before the crash: applied, and nothing left unfinished.
+        expect(left, where).toEqual([]);
+      } else if (changed) {
+        // On disk differs from before, and the row never closed: it is left open, and says where.
+        expect(
+          left.map((each) => each.path),
+          where,
+        ).toEqual([row]);
+      } else {
+        expect(left.length, where).toBeLessThanOrEqual(1);
+      }
+    }
+    expect(crashes).toBeGreaterThan(5);
   });
 });
 
@@ -1477,8 +1594,8 @@ describe('apply then undo, as a seeded property', () => {
     return forms.filter(() => random() < 0.6);
   };
   /** Third notes linking the items, the kept task and a note sharing an item's title. */
-  function thirdNotes(random: () => number): Record<string, string> {
-    const targets = [CALL, ARTICLE, LUNCH, RENEW, KEPT, 'Reference/Payroll article.md'];
+  function thirdNotes(random: () => number, also: readonly string[] = []): Record<string, string> {
+    const targets = [CALL, ARTICLE, LUNCH, RENEW, KEPT, 'Reference/Payroll article.md', ...also];
     const notes: Record<string, string> = {
       'Reference/Payroll article.md': 'Clipped from the web.\n',
     };
@@ -1493,23 +1610,37 @@ describe('apply then undo, as a seeded property', () => {
     return notes;
   }
 
-  const SEEDS = Array.from({ length: 24 }, (_, at) => at + 1);
+  const SEEDS = SWEPT.flatMap(({ name }) =>
+    Array.from({ length: 24 }, (_, at) => [name, at + 1] as const),
+  );
   it.each(SEEDS)(
-    'seed %i: every byte of every note, and every path, back whatever rows are applied and in whatever order',
-    async (seed) => {
+    '%s, seed %i: every byte of every note, and every path, back whatever rows are applied and in whatever order',
+    async (name, seed) => {
       {
+        const { notes, scenario } = sweptOf(name);
+        const shipped = name === 'as shipped';
         const random = seededRandom(seed);
-        const v = setUp({ ...VAULT, ...thirdNotes(random) });
+        const v = setUp(
+          { ...(shipped ? notes : VAULT), ...thirdNotes(random, shipped ? [SEND] : []) },
+          scenario,
+        );
         const before = v.snapshot();
         const previewed = await v.preview();
         // Every other seed, someone edits each note the row moves, as it lands (#911).
-        const edits = seed % 2 === 0 ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
+        const edits = seed % 2 === 0 && !shipped ? editAfterTheMove(v, 'Mine.\n') : { count: 0 };
         const rows = [...previewed.rows].sort(() => random() - 0.5).filter(() => random() < 0.8);
         const results = await applySureRows(v.ports, {
-          appliable: EVERY_ASSIST_KIND,
+          // The production list, handed nothing, for the rows that ship.
+          ...(scenario.appliable !== null && { appliable: scenario.appliable }),
           rows,
           notePaths: v.notePaths(),
         });
+        // About something: each row it chose was applied (none moves on the production list).
+        if (shipped)
+          expect(
+            results.every(({ applied }) => applied.kind === 'applied'),
+            `seed ${seed}`,
+          ).toBe(true);
         expect(v.files.get(KEPT), `seed ${seed}`).toBe(VAULT[KEPT]);
         for (const path of v.files.keys())
           expect(path.includes('..'), `seed ${seed}: ${path}`).toBe(false);
@@ -1528,7 +1659,7 @@ describe('apply then undo, as a seeded property', () => {
         const kept = [...notesBut(v.files)].filter(([, text]) => text.endsWith('Mine.\n'));
         expect(kept.length, `seed ${seed}`).toBe(edits.count);
         // About something: on an even seed, edits did land as notes moved.
-        if (seed % 2 === 0) expect(edits.count, `seed ${seed}`).toBeGreaterThan(0);
+        if (seed % 2 === 0 && !shipped) expect(edits.count, `seed ${seed}`).toBeGreaterThan(0);
         for (const [path] of kept) expect(before.get(path), `seed ${seed}: ${path}`).toBeDefined();
         const untouched = new Map(
           [...notesBut(v.files)].filter(([, text]) => !text.endsWith('Mine.\n')),
