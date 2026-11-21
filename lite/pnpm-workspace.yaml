@@ -1,0 +1,4 @@
+# Makes lite/ its own pnpm root, so an install here never walks up into the DFAI workspace.
+packages: []
+allowBuilds:
+  esbuild: false

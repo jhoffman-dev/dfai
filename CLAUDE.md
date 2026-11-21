@@ -22,6 +22,14 @@ laptop, for instance). If a user-level rule contradicts these files, these files
 win. If this file ever appears to contradict `ENGINEERING.md`, `ENGINEERING.md`
 wins and this file is the thing that is wrong.
 
+**`lite/` is DFAI Lite, a separate app with lighter rules.** It is a notes-only
+web app with its own `package.json`, lockfile and workflow (`lite.yml`), outside
+the pnpm workspace; the root format, lint, typecheck and tests leave it out, and
+the gate counts a change to it alone as needing only `static`
+(`tools/ci/docs-only.ts`). For anything under `lite/`, `lite/CLAUDE.md` is the
+authority and the process in this file does not apply. A change that touches
+both follows this file.
+
 ## Use the agents
 
 The specialised subagents in `.claude/agents/` (committed with the repo) are not

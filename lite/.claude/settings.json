@@ -1,0 +1,6 @@
+{
+  "subagentPromptCacheTtl": "1h",
+  "permissions": {
+    "deny": ["Agent(general-purpose)"]
+  }
+}

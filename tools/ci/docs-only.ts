@@ -13,12 +13,18 @@ const TESTED_DOCS = ['vault/docs/api/', 'vault/docs/contracts/'];
 
 const DOCS_FOLDERS = ['docs/', 'vault/docs/', '.claude/agents/'];
 
+/**
+ * DFAI Lite (lite/CLAUDE.md): its own project, lockfile and workflow
+ * (.github/workflows/lite.yml). Nothing DFAI tests, builds or lints opens it.
+ */
+const OWN_GATE_FOLDERS = ['lite/'];
+
 const isRootMarkdown = (path: string) => !path.includes('/') && path.endsWith('.md');
 
 function isDocs(path: string): boolean {
   if (TESTED_DOCS.some((folder) => path.startsWith(folder))) return false;
   if (path === 'LICENSE' || isRootMarkdown(path)) return true;
-  return DOCS_FOLDERS.some((folder) => path.startsWith(folder));
+  return [...DOCS_FOLDERS, ...OWN_GATE_FOLDERS].some((folder) => path.startsWith(folder));
 }
 
 /**

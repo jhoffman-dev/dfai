@@ -8,6 +8,8 @@ describe('a docs-only change', () => {
     [['docs/guide/index.html']],
     [['vault/docs/adr/0031-embeddings.md', 'vault/docs/design/tokens.md']],
     [['.claude/agents/coder.md']],
+    // DFAI Lite has a workflow of its own (lite.yml), so it counts as nothing the gate reads.
+    [['lite/src/domain/links/wikilink.ts', 'lite/package.json']],
   ])('is one that touches only documentation: %j', (paths) => {
     expect(isDocsOnlyChange(paths)).toBe(true);
   });
@@ -25,6 +27,8 @@ describe('a docs-only change', () => {
     ['a file that only looks like the licence', ['apps/mcp/LICENSE']],
     ['a folder that only starts like docs', ['docs-tools/build.ts']],
     ['Claude settings beside the agents', ['.claude/settings.json']],
+    ['DFAI Lite beside source', ['lite/src/app/main.tsx', 'packages/ui/src/index.ts']],
+    ['a folder that only starts like lite', ['lite-tools/build.ts']],
   ])('is not one that touches %s', (_what, paths) => {
     expect(isDocsOnlyChange(paths)).toBe(false);
   });
