@@ -16,7 +16,7 @@ import {
   type TaskPriority,
 } from '@dfai/domain';
 import { InboxPage, type InboxPageProps } from './inbox-page.tsx';
-import { priorityPill } from './priority-pill.tsx';
+import { priorityPicker, priorityPill } from './priority-pill.tsx';
 import { PropertiesPanel } from './properties-panel.tsx';
 import { TableView, type TableResult, type TableSchema } from './table-view.tsx';
 import { TodayPage, type TodayPageProps } from './today-page.tsx';
@@ -33,6 +33,29 @@ function pillOf(name: HTMLElement): HTMLElement {
 
 /** What a pill shows on screen: its words a screen reader is not given twice. */
 const shownOn = (pill: HTMLElement) => pill.querySelector('[aria-hidden="true"]')?.textContent;
+
+describe('the priority picker', () => {
+  const other = (value: unknown) => priorityPicker(value).choices.at(-1)?.label;
+
+  it('shows a list or a map of the note’s own as compact JSON, never "[object Object]"', () => {
+    expect(other([1, 2])).toBe('Other: [1,2]');
+    expect(other({ level: 'high' })).toBe('Other: {"level":"high"}');
+    expect(other('  high ')).toBe('Other: high');
+    expect(priorityPicker([1, 2]).selected).toBe('other');
+  });
+
+  it('offers none and P1 to P4 alone for none or one of the four', () => {
+    expect(priorityPicker(null)).toMatchObject({ selected: '' });
+    expect(priorityPicker(3).selected).toBe('3');
+    expect(priorityPicker(3).choices.map((choice) => choice.label)).toEqual([
+      'No priority',
+      'P1',
+      'P2',
+      'P3',
+      'P4',
+    ]);
+  });
+});
 
 describe('the priority pill', () => {
   it('shows P1 and reads "Priority 1" to a screen reader, so colour is not the only signal', () => {
@@ -285,6 +308,12 @@ describe('the properties panel', () => {
     expect(onChange).not.toHaveBeenCalled();
     await user.selectOptions(field, 'P3');
     expect(onChange).toHaveBeenLastCalledWith('priority', 3);
+  });
+
+  it('cuts a long value of the note’s own short in "Other: …"', () => {
+    panel('x'.repeat(60));
+    const field = screen.getByLabelText('Priority') as HTMLSelectElement;
+    expect(field.selectedOptions[0]?.text).toBe(`Other: ${'x'.repeat(23)}…`);
   });
 
   it('is a number field where the caller does not say it is a task’s priority', () => {

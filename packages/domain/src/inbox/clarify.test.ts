@@ -275,10 +275,7 @@ describe('clarifyPlan — what the vault’s Task type lets a task be', () => {
     });
 
   it('offers only the GTD statuses that type declares, and all eight with GTD’s own or none', () => {
-    expect(clarifyVocabulary([OWN])).toEqual({
-      statuses: ['backlog'],
-      startsAt: null,
-    });
+    expect(clarifyVocabulary([OWN])).toEqual({ statuses: ['backlog'], startsAt: null });
     expect(clarifyVocabulary([TASK_TYPE_FILE.type]).statuses).toHaveLength(8);
     expect(clarifyVocabulary([])).toMatchObject({ startsAt: 'inbox' });
     expect(clarifyVocabulary([]).statuses).toHaveLength(8);

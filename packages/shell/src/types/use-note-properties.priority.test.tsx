@@ -11,6 +11,7 @@ import { renderHook } from '@testing-library/react';
 import { createVaultPath, parseObjectType, type ObjectType, type VaultPath } from '@dfai/domain';
 import { fakeIndexPort, fakeMarkdown, fakeVaultFs, type OpenNote } from '@dfai/application';
 import { useNoteProperties } from './use-note-properties.ts';
+import { TYPES_NOT_READ } from './use-types.ts';
 
 const links = {
   fs: fakeVaultFs(),
@@ -43,7 +44,11 @@ describe('useNoteProperties: a task’s priority row', () => {
 
   it('is picked so too where the note holds it undeclared, a value of its own included', () => {
     expect(editorOf([task(undefined)], { type: 'task', priority: 7 })).toBe('priority');
-    expect(editorOf([], { type: 'Task', priority: 'high' })).toBe('priority');
+    expect(editorOf([task(undefined)], { type: 'Task', priority: 'high' })).toBe('priority');
+  });
+
+  it('is edited as its kind while the vault’s types are not read: its Task type may keep its own', () => {
+    expect(editorOf(TYPES_NOT_READ, { type: 'task', priority: 'High' })).toBeUndefined();
   });
 
   it('is edited as its kind where the Task type keeps a priority of another kind', () => {
