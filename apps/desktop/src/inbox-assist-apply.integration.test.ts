@@ -36,10 +36,14 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyAssistRow,
+  guardedWrites,
   inVault,
+  linksToUpdate,
   previewInboxAssist,
   recordingActivity,
+  setNoteProperties,
   undoAssistRow,
+  updateLinks,
   type ApplyAssistPorts,
   type AssistApplied,
 } from '@dfai/application';
@@ -529,5 +533,96 @@ describe('Inbox assist, applied and undone through the real adapters', () => {
         expectedText: 'One.\n',
       }),
     ).rejects.toThrow(CHANGED_ON_DISK);
+  });
+});
+
+/**
+ * Review #911 round 4 (1): the guard only adds to the checks a write asks
+ * for, never replaces one. The row checked A; the person edits to B; the
+ * shared use-case reads B; the person goes back to A and saves. The guard's
+ * own check sees A, as it knew, but the use-case's write is held to the time
+ * it read B at, so the host refuses it and the person's A is kept.
+ */
+describe('review #911 round 4: the guard keeps the checks a write asked for (1)', () => {
+  const NOTE = createVaultPath('Notes/Week.md');
+  const A = 'See [[Inbox/Call Mara]].\n';
+  const B = 'See [[Inbox/Call Mara]]. Mine.\n';
+  const at = (seconds: number) => new Date(LEFT_AT.getTime() + seconds * 1000);
+
+  /** A vault holding the note as A, its port reverting it to A just after the first read that saw B. */
+  function edited() {
+    const root = mkdtempSync(join(tmpdir(), 'dfai-assist-guard-'));
+    roots.push(root);
+    mkdirSync(join(root, 'Notes'));
+    mkdirSync(join(root, 'Inbox'));
+    writeFileSync(join(root, 'Inbox/Call Mara.md'), 'Call her.\n');
+    writeFileSync(join(root, NOTE), A);
+    utimesSync(join(root, NOTE), LEFT_AT, LEFT_AT);
+    hostFor(root, join(root, '..', `${root.split('/').pop()!}-trash`));
+    // The person's edit, after the row checked A.
+    writeFileSync(join(root, NOTE), B);
+    utimesSync(join(root, NOTE), at(5), at(5));
+    const raw = inVault({ fs: tauriVaultFs, vault: root });
+    let reverted = false;
+    const fs = {
+      ...raw,
+      readTextFile: async (path: Parameters<typeof raw.readTextFile>[0]) => {
+        const read = await raw.readTextFile(path);
+        if (path === NOTE && read.text === B && !reverted) {
+          // Gone back to A, and saved, between the use-case's read and its write.
+          reverted = true;
+          writeFileSync(join(root, NOTE), A);
+          utimesSync(join(root, NOTE), at(10), at(10));
+        }
+        return read;
+      },
+    };
+    const editors = {
+      state: () => 'closed' as const,
+      flush: async () => {},
+      follow: () => {},
+      abandon: () => {},
+      reload: () => {},
+    };
+    const index = automationVault({ notes: {}, today: TODAY }).ports.index;
+    const guard = guardedWrites(
+      { fs, markdown: remarkMarkdown, editors, index },
+      { known: new Map([[NOTE, A]]), items: new Set(), mark: async () => {} },
+    );
+    return { guard, raw, read: () => readFileSync(join(root, NOTE), 'utf8') };
+  }
+
+  it('set-property: refused, the person’s A kept', async () => {
+    const v = edited();
+    await expect(
+      setNoteProperties({
+        fs: v.guard.ports.fs,
+        markdown: remarkMarkdown,
+        path: NOTE,
+        values: { status: 'done' },
+        today: TODAY,
+      }),
+    ).rejects.toThrow();
+    expect(v.read()).toBe(A);
+  });
+
+  it('update-links: refused, the person’s A kept', async () => {
+    const v = edited();
+    const update = await linksToUpdate({
+      fs: v.raw,
+      notePaths: [NOTE, createVaultPath('Inbox/Call Mara.md')],
+      move: {
+        from: createVaultPath('Inbox/Call Mara.md'),
+        to: createVaultPath('Tasks/Call Mara.md'),
+      },
+    });
+    expect(update.notes.map((note) => note.path)).toEqual([NOTE]);
+    const report = await updateLinks({
+      fs: v.guard.ports.fs,
+      openNotes: v.guard.ports.editors,
+      update,
+    });
+    expect(report.failed.map((each) => each.path)).toEqual([NOTE]);
+    expect(v.read()).toBe(A);
   });
 });

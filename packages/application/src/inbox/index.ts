@@ -32,3 +32,5 @@ export type { AssistUndone } from './undo-inbox-assist.ts';
 export { INBOX_ASSIST_RULE } from './assist-log.ts';
 export { dismissUnfinishedAssist, findUnfinishedAssist } from './assist-unfinished.ts';
 export type { AssistUnfinished } from './assist-unfinished.ts';
+export { guardedWrites, GuardRefusedError } from './assist-guard.ts';
+export type { GuardedWrites } from './assist-guard.ts';
