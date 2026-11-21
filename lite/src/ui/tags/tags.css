@@ -1,0 +1,125 @@
+.tags-page,
+.graph-page {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-7);
+  box-sizing: border-box;
+}
+
+.page-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-title);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.tags-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.tag-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tag-tree .tag-tree {
+  margin: 4px 0 0 var(--space-4);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-chip);
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tag-chip.is-selected {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.tag-count {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.tag-chip .tag-count {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.tags-empty {
+  color: var(--ink-3);
+}
+
+.tags-subheading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: 15px;
+}
+
+.tagged-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tagged-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tagged-list a {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.tagged-list a:hover .tagged-title {
+  text-decoration: underline;
+}
+
+.tagged-title {
+  font-weight: 600;
+}
+
+.tagged-folder,
+.tagged-summary {
+  color: var(--ink-3);
+  font-size: var(--text-meta);
+}
+
+@media (max-width: 720px) {
+  .tags-page,
+  .graph-page {
+    padding: var(--space-4);
+  }
+
+  .tags-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

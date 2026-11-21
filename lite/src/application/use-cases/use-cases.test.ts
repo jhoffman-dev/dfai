@@ -1,6 +1,6 @@
 import { FAVORITES_PATH } from '../../domain/favorites/index.ts';
 import { VaultSession, type VaultChange } from '../session/index.ts';
-import { MemoryNoteStore } from '../testing/index.ts';
+import { FixedClock, MemoryNoteStore } from '../testing/index.ts';
 import {
   createNoteFromLink,
   createQuickNote,
@@ -53,6 +53,11 @@ describe('creating notes', () => {
     expect(deps.session.folderTree().folders.map((folder) => folder.name)).toContain('Inbox');
   });
 
+  it('makes a quick note in another folder when one is given', async () => {
+    const deps = await opened();
+    expect(await createQuickNote(deps, { folder: 'People' })).toBe('People/Untitled.md');
+  });
+
   it('makes a note from a link, or opens the one that answers', async () => {
     const deps = await opened();
     expect(await createNoteFromLink(deps, { target: 'Tobias Fenn' })).toMatchObject({
@@ -90,6 +95,41 @@ describe('saving a note', () => {
     const before = deps.session.version;
     await saveNoteText(deps, { path: MARA, text: 'Leads payroll. #person' });
     expect(deps.session.version).toBe(before);
+  });
+
+  it('saves over the note when it is still the text the editor started from', async () => {
+    const deps = await opened();
+    const result = await saveNoteText(deps, {
+      path: MARA,
+      text: 'Typed.',
+      basedOnText: 'Leads payroll. #person',
+      clock: new FixedClock(),
+    });
+    expect(result).toEqual({ kind: 'saved', path: MARA });
+    expect((await deps.store.get(MARA))?.text).toBe('Typed.');
+  });
+
+  it('forks the editor’s text to a conflict copy when the note changed underneath it', async () => {
+    const deps = await opened();
+    // A sync pulled another device's edit while the editor still held the old text.
+    const pulled = { path: MARA, text: 'Edited elsewhere.', baseSha: 'r2', dirty: false };
+    await deps.store.put(pulled);
+    deps.session.applyWrite(pulled);
+    const result = await saveNoteText(deps, {
+      path: MARA,
+      text: 'Typed here.',
+      basedOnText: 'Leads payroll. #person',
+      clock: new FixedClock(new Date(2026, 10, 21, 9, 0)),
+    });
+    const copy = 'People/Mara Quill (conflict 2026-11-21).md';
+    expect(result).toEqual({ kind: 'forked', path: copy, keptPath: MARA });
+    expect(await deps.store.get(MARA)).toEqual(pulled);
+    expect(await deps.store.get(copy)).toEqual({
+      path: copy,
+      text: 'Typed here.',
+      baseSha: null,
+      dirty: true,
+    });
   });
 });
 

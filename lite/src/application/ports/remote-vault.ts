@@ -17,8 +17,11 @@ export interface PushCommit {
   readonly message: string;
   readonly upserts: readonly { readonly path: VaultPath; readonly text: string }[];
   readonly deletes: readonly VaultPath[];
-  /** The head this commit was built on. If the branch has moved, the push fails. */
-  readonly parentCommitSha: string;
+  /**
+   * The head this commit was built on. If the branch has moved, the push
+   * fails. Null when the branch does not exist yet: the push creates it.
+   */
+  readonly parentCommitSha: string | null;
 }
 
 /**
@@ -30,8 +33,8 @@ export interface PushCommit {
  * and never forces one.
  */
 export interface RemoteVault {
-  /** The branch's head now. */
-  head(): Promise<RemoteHead>;
+  /** The branch's head now, or null when it has no commit yet (an empty repository). */
+  head(): Promise<RemoteHead | null>;
   /** Every file under a tree, recursively, sorted by path. Folders are not listed. */
   tree(treeSha: string): Promise<RemoteEntry[]>;
   /** The texts of blobs, by sha, fetched in as few requests as it can. Every sha asked for is in the map. */

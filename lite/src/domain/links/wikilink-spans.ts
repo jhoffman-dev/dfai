@@ -121,8 +121,10 @@ class Scan {
   /** The last `-->` searched for, and where the search began: -2 before any. */
   private close = -2;
   private closeSearchedFrom = 0;
+  private readonly text: string;
 
-  constructor(private readonly text: string) {
+  constructor(text: string) {
+    this.text = text;
     this.readLines();
     this.readRuns();
   }

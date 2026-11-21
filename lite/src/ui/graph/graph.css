@@ -1,0 +1,227 @@
+/* The graph page: neutral chrome from the app's tokens, with fallbacks so it reads on its own. */
+
+.graph {
+  --graph-node: var(--ink-3, #8a8a8a);
+  --graph-node-active: var(--accent, #4b6fd6);
+  --graph-edge: var(--line-strong, #c9c9c9);
+  --graph-label: var(--ink-2, #555);
+  --graph-ground: var(--bg, #fff);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  height: 100%;
+  min-height: 0;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  color: var(--ink, #222);
+  background: var(--graph-ground);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .graph {
+    --graph-node: var(--ink-3, #8d8d8d);
+    --graph-node-active: var(--accent, #8ea8f0);
+    --graph-edge: var(--line-strong, #444);
+    --graph-label: var(--ink-2, #bbb);
+    --graph-ground: var(--bg, #1b1b1b);
+    color: var(--ink, #e6e6e6);
+  }
+}
+
+:root[data-theme='dark'] .graph {
+  --graph-node: var(--ink-3, #8d8d8d);
+  --graph-node-active: var(--accent, #8ea8f0);
+  --graph-edge: var(--line-strong, #444);
+  --graph-label: var(--ink-2, #bbb);
+  --graph-ground: var(--bg, #1b1b1b);
+  color: var(--ink, #e6e6e6);
+}
+
+.graph__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  font-size: var(--text-meta, 13px);
+}
+
+.graph__group {
+  display: inline-flex;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 6px);
+  overflow: hidden;
+}
+
+.graph__group button {
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2, #555);
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph__group button[aria-pressed='true'] {
+  background: var(--selected, rgb(0 0 0 / 0.07));
+  color: var(--ink, #222);
+}
+
+.graph__group button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.graph__depth {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2, #555);
+}
+
+.graph__filter {
+  flex: 1 1 160px;
+  max-width: 280px;
+  padding: 4px 8px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-control, 6px);
+  background: var(--surface, transparent);
+  color: inherit;
+  font: inherit;
+}
+
+.graph__count {
+  margin-left: auto;
+  color: var(--ink-3, #888);
+}
+
+.graph__notice {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-control, 6px);
+  background: var(--well, rgb(0 0 0 / 0.04));
+  color: var(--ink-2, #555);
+  font-size: var(--text-meta, 13px);
+}
+
+.graph__empty {
+  color: var(--ink-3, #888);
+}
+
+.graph__stage {
+  flex: 1;
+  min-height: 320px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: var(--radius-popover, 8px);
+  overflow: hidden;
+}
+
+.graph__surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.graph__surface:active {
+  cursor: grabbing;
+}
+
+.graph__edge {
+  stroke: var(--graph-edge);
+  stroke-width: 1;
+  transition: opacity 120ms;
+}
+
+.graph__edge--dim {
+  opacity: 0.15;
+}
+
+.graph__node {
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.graph__dot {
+  fill: var(--graph-node);
+  stroke: var(--graph-ground);
+  stroke-width: 1.5;
+}
+
+.graph__node--ghost {
+  cursor: default;
+}
+
+.graph__node--ghost .graph__dot {
+  fill: var(--graph-ground);
+  stroke: var(--graph-node);
+  stroke-dasharray: 2 2;
+}
+
+.graph__node--active .graph__dot {
+  fill: var(--graph-node-active);
+  stroke: var(--graph-node-active);
+  stroke-width: 3;
+  stroke-opacity: 0.35;
+}
+
+.graph__node--dim {
+  opacity: 0.2;
+}
+
+.graph__label {
+  fill: var(--graph-label);
+  font-size: 11px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.graph__node--active .graph__label {
+  fill: var(--ink, #222);
+  font-weight: 600;
+}
+
+.graph__list,
+.graph__list-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph__list {
+  overflow: auto;
+}
+
+.graph__list-item {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line, #eee);
+}
+
+.graph__list-note,
+.graph__list-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph__list-note[aria-current='page'] {
+  font-weight: 600;
+}
+
+.graph__list-links {
+  padding-left: var(--space-4, 16px);
+  font-size: var(--text-meta, 13px);
+}
+
+.graph__list-way {
+  color: var(--ink-3, #888);
+}
+
+.graph__list-link--ghost {
+  color: var(--ink-3, #888);
+  cursor: default;
+}

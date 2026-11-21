@@ -1,0 +1,73 @@
+.note-editor {
+  min-height: 60vh;
+}
+
+.note-editor .cm-editor {
+  height: 100%;
+}
+
+.cm-link-pill,
+.cm-tag-pill {
+  border-radius: var(--radius-chip);
+  padding: 1px 2px;
+}
+
+.cm-link-pill {
+  background: var(--link-bg);
+  color: var(--link-ink);
+}
+
+.cm-link-pill.is-unresolved {
+  background: transparent;
+  color: var(--link-ink);
+  box-shadow: inset 0 0 0 1px var(--link-bg);
+}
+
+.cm-tag-pill {
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 0;
+  border-radius: var(--radius-popover);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+  padding: 4px;
+  font-family: var(--font-ui);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul {
+  max-height: 300px;
+  font-family: var(--font-ui);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 4px 8px;
+  border-radius: var(--radius-row);
+  color: var(--ink);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--selected);
+  color: var(--ink);
+}
+
+.cm-tooltip-autocomplete .cm-completionDetail {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-style: normal;
+  font-size: var(--text-meta);
+}
+
+.cm-tooltip-autocomplete .cm-completionMatchedText {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.cm-placeholder {
+  color: var(--ink-3);
+}

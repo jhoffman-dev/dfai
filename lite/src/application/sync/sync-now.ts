@@ -2,13 +2,39 @@ import type { VaultPath } from '../../domain/vault/index.ts';
 import type { Clock, NoteStore, RemoteVault } from '../ports/index.ts';
 import type { VaultSession } from '../session/index.ts';
 
-/** What one sync needs. */
+/** A file's path and text, as derived files are made from and of. */
+export interface PathText {
+  readonly path: VaultPath;
+  readonly text: string;
+}
+
+/**
+ * Git's name for a blob holding `text` as UTF-8 (WebCrypto SHA-1 over
+ * `blob <len>\0<bytes>` in the app). Equal texts, equal names: it is how a
+ * local text is compared with a remote sha without fetching the blob.
+ */
+export type BlobHasher = (text: string) => Promise<string>;
+
+/** The files generated from the notes (`_index/*.md`): same notes, same files. */
+export type DerivedFiles = (notes: readonly PathText[]) => readonly PathText[];
+
+/** What sync needs. */
 export interface SyncDeps {
   readonly store: NoteStore;
   readonly remote: RemoteVault;
   readonly session: VaultSession;
   /** Dates conflict copies. */
   readonly clock: Clock;
+  /**
+   * Which repository and branch `remote` is, e.g. `owner/repo@branch`. What
+   * was last seen is kept with it, and sync refuses to compare this device's
+   * files with a remote other than the one they were synced with.
+   */
+  readonly remoteIdentity: string;
+  /** Must name blobs exactly as `remote` does. */
+  readonly hashBlob: BlobHasher;
+  /** When given, the generated `_index/` files are kept in step with the notes on every push. */
+  readonly derivedFiles?: DerivedFiles;
 }
 
 /** A note both sides changed: the remote version stayed at `path`, this device's went to `copy`. */
@@ -17,8 +43,15 @@ export interface SyncConflict {
   readonly copy: VaultPath;
 }
 
-/** Why a sync stopped. Nothing was lost: what was not pushed is still dirty here. */
-export type SyncFailure = 'auth' | 'unreachable' | 'moved';
+/**
+ * Why a sync stopped. Nothing was lost: what was not pushed is still dirty
+ * here. `moved`: the branch kept moving under every retry.
+ * `branch-missing`: the branch synced before is gone from GitHub.
+ * `remote-changed`: this device last synced with another repository or
+ * branch. `error`: anything else (GitHub answered something unreadable, say).
+ */
+export type SyncFailure =
+  'auth' | 'unreachable' | 'moved' | 'branch-missing' | 'remote-changed' | 'error';
 
 export type SyncResult =
   | {
@@ -28,27 +61,14 @@ export type SyncResult =
       /** Files sent, or deleted, in the one commit pushed (0 when there was nothing to push). */
       readonly pushed: number;
       readonly conflicts: readonly SyncConflict[];
-      /** The branch's head after the sync. */
-      readonly headSha: string;
+      /** The branch's head after the sync; null for an empty repository with nothing pushed. */
+      readonly headSha: string | null;
     }
   | { readonly kind: 'failed'; readonly reason: SyncFailure; readonly message: string };
 
 /**
- * Pull, then push: one round of sync with the remote.
- *
- * 1. Read the head; if its tree differs from the last one seen (kept in the
- *    store's state), read the tree and fetch only blobs that changed.
- * 2. For each path, decide with the domain's `decideSync` over
- *    `{ base, local, remote }`: base is the sha last seen for the path (its
- *    `baseSha`, or the last tree's entry when the file was deleted here);
- *    local is the base when the file is not dirty, a marker unique to its
- *    text when it is, and null when it is gone; remote is the new tree's sha.
- * 3. Apply pulls to the store and session; a conflict keeps the remote text
- *    at the path and this device's at `conflictCopyPath` (dated by `clock`).
- * 4. Push everything dirty and every delete as one commit on the head read
- *    in step 1. On `RemoteMovedError`, start again from step 1; never force.
- * 5. Mark pushed files clean with their new shas and record the tree seen.
- *
- * Implemented in this folder (`src/application/sync/`) by the sync work.
+ * One round of sync with the remote: pull, then push. Made by
+ * `createSyncNow(deps)`; the scheduler decides when to call it, and never
+ * runs two at once.
  */
-export type SyncNow = (deps: SyncDeps) => Promise<SyncResult>;
+export type SyncNow = () => Promise<SyncResult>;

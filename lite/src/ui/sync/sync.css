@@ -1,0 +1,37 @@
+.sync-chip {
+  border: 0;
+  border-radius: var(--radius-chip);
+  padding: 2px 8px;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sync-chip:disabled {
+  cursor: default;
+}
+
+.sync-chip.tone-gray {
+  background: var(--hue-gray-bg);
+  color: var(--hue-gray-ink);
+}
+
+.sync-chip.tone-green {
+  background: var(--hue-green-bg);
+  color: var(--hue-green-ink);
+}
+
+.sync-chip.tone-blue {
+  background: var(--hue-blue-bg);
+  color: var(--hue-blue-ink);
+}
+
+.sync-chip.tone-red {
+  background: var(--hue-red-bg);
+  color: var(--hue-red-ink);
+}
+
+.sync-chip.tone-orange {
+  background: var(--hue-orange-bg);
+  color: var(--hue-orange-ink);
+}

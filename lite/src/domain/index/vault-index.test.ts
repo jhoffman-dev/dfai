@@ -98,6 +98,13 @@ describe('a note’s summary', () => {
     expect(noteSummary('')).toBe('');
   });
 
+  it('joins a first sentence wrapped over lines, and passes over a leading tags line', () => {
+    const text =
+      '#person #area/pay\n\nLeads payroll for\nLarkspur Payroll. Joined in May.\n\nMore.';
+    expect(noteSummary(text)).toBe('Leads payroll for Larkspur Payroll.');
+    expect(noteSummary('- First item\n- Second item.')).toBe('First item');
+  });
+
   it('cuts a long sentence with an ellipsis', () => {
     expect(noteSummary('a'.repeat(300))).toHaveLength(200);
   });
