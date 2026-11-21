@@ -135,15 +135,19 @@ export function useNoteProperties({
     return [
       ...declared,
       ...extras.map((key) => undeclared(key, extraKind(key), properties[key])),
-    ].map((def) => ({
-      def,
-      ...(ranked && def.key === TASK_KEYS.priority && { editor: 'priority' as const }),
-      value: properties[def.key] ?? null,
-      error:
-        validatePropertyValue({ def, value: properties[def.key] ?? null }) ??
-        linkProblems[def.key] ??
-        null,
-    }));
+    ].map((def) => {
+      const value = properties[def.key] ?? null;
+      // A task's priority is a soft field (#913): any value is kept and picked
+      // over as "Other: …", so its row is never judged by its kind.
+      if (ranked && def.key === TASK_KEYS.priority) {
+        return { def, editor: 'priority' as const, value, error: null };
+      }
+      return {
+        def,
+        value,
+        error: validatePropertyValue({ def, value }) ?? linkProblems[def.key] ?? null,
+      };
+    });
   }, [note, isView, type, properties, addedKinds, linkProblems, ranked]);
 
   const [relationChoices, setRelationChoices] = useState<
