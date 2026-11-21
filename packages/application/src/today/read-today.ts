@@ -70,7 +70,8 @@ export async function readToday({
 }
 
 /** A task with its priority left out, which a row then neither shows nor offers. */
-function withoutPriority({ priority, ...task }: ReviewTask): ReviewTask {
-  void priority;
-  return task;
+function withoutPriority(listed: ReviewTask): ReviewTask {
+  const { priority, ...task } = listed;
+  // A task read with none is handed back as it is: nothing to leave out.
+  return priority === undefined ? listed : task;
 }

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
   choosesForToday,
-  ranksTasks,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
@@ -11,6 +10,7 @@ import {
   type TodayChoice,
   type VaultPath,
 } from '@dfai/domain';
+import { ranksKnownTasks } from '../types/use-types.ts';
 import {
   changeUndoably,
   landedAsRefreshAsked,
@@ -132,7 +132,7 @@ export function useToday(options: TodayOptions) {
   // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
   const choosing = choosesForToday(types);
   // Whether tasks are ranked 1 to 4 (#913), so their rows show a priority.
-  const ranked = ranksTasks(types);
+  const ranked = ranksKnownTasks(types);
   // When the write just made landed, taken as its refresh is asked (#698).
   const landedAt = useRef<Landed | null>(null);
   const refreshAsked = useCallback(() => {

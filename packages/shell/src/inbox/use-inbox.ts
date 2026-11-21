@@ -7,7 +7,6 @@ import {
   filingRefusal,
   noteTitle,
   PERSON_TYPE,
-  ranksTasks,
   tasksStartInInbox,
   waitingOnRefusal,
   type Clarification,
@@ -17,6 +16,7 @@ import {
   type ObjectType,
   type VaultPath,
 } from '@dfai/domain';
+import { ranksKnownTasks } from '../types/use-types.ts';
 import {
   clarifiedAnything,
   clarifyInboxItem,
@@ -165,7 +165,7 @@ export function useInbox(options: InboxOptions) {
     indexKey,
     fresh,
     tasksStartInInbox: startInInbox,
-    ranked: ranksTasks(types),
+    ranked: ranksKnownTasks(types),
     moment: writes.moment,
     caughtUp,
   });

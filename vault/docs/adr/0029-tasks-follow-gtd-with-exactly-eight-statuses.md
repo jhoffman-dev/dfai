@@ -282,8 +282,8 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
   or changed because of it, and no task rule reads it. Reading is what
   decides:
   - The integers 1 to 4 (and their digits as text) are a priority.
-  - Anything else (`7`, `high`, a list) reads as none: no pill, and it sorts
-    with the tasks that have none.
+  - Anything else (`7`, `high`, a list) reads as none: no pill. How it
+    sorts is said below.
   - Why: a vault may already use `priority` its own way, and an outside
     tool's sync must accept whatever is in the file rather than have the
     vault refuse it.
@@ -294,6 +294,10 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
   - Today's rows, the Inbox's rows and Clarify read it.
   - The properties panel reads it (the shell puts the editor on the row).
   - A task table reads it.
+  - Until the vault's types are read, or after a read that failed, the
+    window treats the vault as not ranking its tasks: no pill and no picker,
+    so none is offered over a `priority` its Task type may keep as another
+    kind (`ranksKnownTasks` in the shell).
   - Where it is false, none of this shows: no pill and no picker. The value
     is edited as its kind.
 - **The pickers write one of the four or take the key out.** The properties
@@ -304,11 +308,7 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
   Today's rows, the Inbox's, and a task table's `priority` column. It reads
   "Priority 1" to a screen reader, so its hue (red, orange, blue, gray) is
   never the only signal.
-- **Sorting puts P1 first and none last.** A view's sort now puts blanks
-  last in either direction, as the query language's sort already did. Plain
-  SQLite, which a type table's sort used, puts NULL first ascending. So
-  every type table sorted ascending now lists its empty cells last, not
-  first. Descending is unchanged.
+- **Sorting.** Sorted by Priority, tasks run P1 to P4 and the ones with no priority come last, in either direction. A value of the note's own sorts by its number where it is one (`0` before P1 and `7` after P4 ascending, the other way round descending) and with no priority where it is words (`high`). Blank cells now come last in both directions on every table column; on main, a missing value came first ascending. The change is the view's sort, which now puts blanks last as the query language's sort already did; plain SQLite, which a type table's sort used, puts NULL first ascending.
 - **The built-in Task type declares it**, after GTD's keys, so a new vault
   has it. It is not one of GTD's keys, so a vault already on GTD is not
   offered the move again for it.

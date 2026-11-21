@@ -67,8 +67,9 @@ export interface TableSchema {
    */
   readonly colors?: Readonly<Record<string, OptionColors>>;
   /**
-   * Whether its `priority` is a task's 1 to 4 (`isTaskPriorityField`), drawn
-   * as the P1 to P4 pill (#913). Left out, it is a number like any other.
+   * Whether its `priority` is a task's 1 to 4 — a task table in a vault that
+   * ranks its tasks (`ranksTasks`) — drawn as the P1 to P4 pill (#913). Left
+   * out, it is a number like any other.
    */
   readonly ranksPriority?: boolean;
 }

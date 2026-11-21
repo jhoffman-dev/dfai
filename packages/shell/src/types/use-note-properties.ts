@@ -3,7 +3,6 @@ import {
   humanizeKey,
   isTaskNote,
   notePropertyKind,
-  ranksTasks,
   relationTypes,
   TASK_KEYS,
   validatePropertyValue,
@@ -13,6 +12,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import { isDatasource, isSavedView } from '@dfai/domain';
+import { ranksKnownTasks } from './use-types.ts';
 import {
   linkedTypeProblems,
   noteTypeName,
@@ -99,7 +99,7 @@ export function useNoteProperties({
   );
   // A task in a vault that ranks its tasks 1 to 4 picks its `priority` as None or P1 to P4 (#913).
   const ranked = useMemo(
-    () => typeName !== null && isTaskNote({ type: typeName }) && ranksTasks(types),
+    () => typeName !== null && isTaskNote({ type: typeName }) && ranksKnownTasks(types),
     [types, typeName],
   );
 

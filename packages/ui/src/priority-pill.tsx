@@ -74,9 +74,19 @@ export function priorityPicker(value: unknown): {
 } {
   const priority = taskPriorityOf(value);
   if (priority !== null) return { selected: String(priority), choices: CHOICES };
-  const written = value === null || value === undefined ? '' : String(value).trim();
+  const written = shownValue(value);
   if (written === '') return { selected: '', choices: CHOICES };
   return { selected: OTHER, choices: [...CHOICES, { value: OTHER, label: `Other: ${written}` }] };
+}
+
+/** How long a value of the note's own is shown in "Other: …" before it is cut short. */
+const SHOWN_LENGTH = 24;
+
+/** A value of the note's own as "Other: …" shows it: words as written, anything else as compact JSON, cut short. */
+function shownValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'string' ? value.trim() : (JSON.stringify(value) ?? String(value));
+  return text.length > SHOWN_LENGTH ? `${text.slice(0, SHOWN_LENGTH - 1)}…` : text;
 }
 
 /**
