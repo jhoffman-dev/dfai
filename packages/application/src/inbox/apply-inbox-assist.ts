@@ -21,25 +21,21 @@ import {
   type LogEntry,
   type VaultPath,
 } from '@dfai/domain';
-import type { ActivityLog, ActivityRecorder } from '../activity/ports.ts';
-import { archiveNotes, type ArchivePorts } from '../archive/archive-notes.ts';
+import type { ActivityRecorder } from '../activity/ports.ts';
+import { archiveNotes } from '../archive/archive-notes.ts';
 import { createPerson } from '../people/people.ts';
-import type { Clock } from '../ports.ts';
 import { setNoteProperties } from '../query/set-property.ts';
 import { loadObjectTypes } from '../types/load-types.ts';
 import { loadTemplates } from '../types/templates.ts';
 import type { AsRead } from '../vault/ports.ts';
-import { guardedWrites, type GuardedWrites } from './assist-guard.ts';
-import { assistRecorder, logAssist, logMark, sayNotDone } from './assist-log.ts';
+import type { GuardedWrites } from './assist-guard.ts';
+import { assistRecorder, sayNotDone } from './assist-log.ts';
+import { assistSides, type ApplyAssistPorts, type AssistSides } from './assist-sides.ts';
 import { recheckNow, type RecheckedNow } from './assist-recheck-now.ts';
 import { clarifyInboxItem } from './clarify-inbox-item.ts';
 import { PartlyUndoneError, undoExactly, type AssistItemUndo } from './exact-undo.ts';
 
-/** What applying an Inbox assist row reaches (#909): the Inbox's own writes, the clock, and Activity. */
-export interface ApplyAssistPorts extends ArchivePorts {
-  readonly clock: Pick<Clock, 'now' | 'today' | 'localNow'>;
-  readonly activity: Pick<ActivityLog, 'inOpenVault'>;
-}
+export type { ApplyAssistPorts } from './assist-sides.ts';
 
 /** What undoing one applied row needs: the item at both ends, the other notes it rewrote, and each person made. */
 export interface AssistUndo {
@@ -125,24 +121,28 @@ export async function applyAssistRow(
       spelled === null ? 'it is not a note in the vault.' : `the vault spells it ${spelled}.`;
     return unchanged(nothingChanged(why));
   }
+  const sides = assistSides(ports);
   let checked: RecheckedNow;
   try {
-    checked = await recheckNow(ports, { row, evidence, notePaths });
+    checked = await recheckNow(
+      { ...sides.vault.reads, clock: sides.clock },
+      { row, evidence, notePaths },
+    );
   } catch (cause) {
     return unchanged(nothingChanged(`it could not be checked (${messageWithoutPaths(cause)}).`));
   }
   if (checked.kind === 'ask') {
     return unchanged({ kind: 'asked', ask: checked.ask, words: checked.words });
   }
-  const recorder = assistRecorder(ports);
-  const journal = await begin(ports, { row, step: checked.step, text: checked.text });
+  const recorder = assistRecorder(sides);
+  const journal = await begin(sides, { row, step: checked.step, text: checked.text });
   if (journal === null) return unchanged(nothingChanged('its log could not be written.'));
   try {
-    await carryOut(journal, { step: checked.step, notePaths });
+    await carryOut(sides, journal, { step: checked.step, notePaths });
   } catch (cause) {
-    return failedApply(ports, { recorder, journal, cause, title: row.title, notePaths });
+    return failedApply(sides, { recorder, journal, cause, title: row.title, notePaths });
   }
-  return appliedRow(ports, { recorder, journal, step: checked.step, notePaths });
+  return appliedRow(sides, { recorder, journal, step: checked.step, notePaths });
 }
 
 /** Where a row's writes stand as it is applied: what undoing it, or taking it back midway, needs. */
@@ -160,17 +160,18 @@ interface Journal {
   readonly items: Set<VaultPath>;
 }
 
-/** What a row writes through: the guarded ports, with the clock the use-cases read. */
-const writing = (journal: Journal, ports: ApplyAssistPorts): ApplyAssistPorts => ({
-  ...ports,
+/** What a row writes through: the guarded ports alone, with the clock the use-cases read. */
+type Writing = GuardedWrites['ports'] & Pick<AssistSides, 'clock'>;
+const writing = (journal: Journal, sides: AssistSides): Writing => ({
   ...journal.guard.ports,
+  clock: sides.clock,
 });
 
 /** The steps a row logs before each write it makes, under its own id. */
 const marking =
-  (ports: Pick<ApplyAssistPorts, 'fs' | 'clock'>, row: string) =>
+  (sides: AssistSides, row: string) =>
   (about: AssistIntent): Promise<void> =>
-    logMark(ports, { kind: 'step', at: ports.clock.localNow(), row, done: [], about });
+    sides.log.mark({ kind: 'step', at: sides.clock.localNow(), row, done: [], about });
 
 /** How many rows this run of DFAI has begun: part of each row's id. */
 let rowsBegun = 0;
@@ -181,9 +182,9 @@ let rowsBegun = 0;
  * crash leaves a trace. Null when the log cannot be written: nothing is.
  */
 async function begin(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   { row, step, text }: { row: AssistRow; step: AssistApplyStep; text: string },
-): Promise<(Journal & { ports: ApplyAssistPorts; step: AssistApplyStep }) | null> {
+): Promise<Journal | null> {
   const at = ports.clock.localNow();
   // Unique per apply (#911): the second, the item, the clock's instant and this run's count —
   // two rows begun in one second, even of one item, never share an id the log closes.
@@ -198,7 +199,7 @@ async function begin(
     plan: assistAppliedWords(step),
   };
   // Not written, nothing is: a row never writes what its log does not say it began.
-  const logged = await logMark(ports, mark).then(
+  const logged = await ports.log.mark(mark).then(
     () => true,
     () => false,
   );
@@ -206,20 +207,20 @@ async function begin(
   const items = new Set<VaultPath>([row.path]);
   // The kept task of a duplicate is never written: the guard refuses it outright.
   const forbidden = new Set<VaultPath>(step.duplicateOf === null ? [] : [step.duplicateOf.path]);
-  const guard = guardedWrites(ports, {
+  const guard = ports.vault.guard({
     known: new Map([[row.path, text]]),
     items,
     forbidden,
     mark: marking(ports, id),
     madeIt: (made) =>
-      logMark(ports, {
+      ports.log.mark({
         kind: 'step',
         at: ports.clock.localNow(),
         row: id,
         done: [{ kind: 'created', path: made.path, digest: digestOf(made.text) }],
       }),
   });
-  return { row: id, from: row.path, at: row.path, before: text, guard, items, ports, step };
+  return { row: id, from: row.path, at: row.path, before: text, guard, items };
 }
 
 /** The item as the row has left it: exactly the checked text and the row's own writes, never a later read. */
@@ -240,7 +241,7 @@ function notesAfter(notePaths: readonly VaultPath[], journal: Journal): VaultPat
 }
 
 async function appliedRow(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     journal,
@@ -269,7 +270,7 @@ async function appliedRow(
     capped: false,
     row: journal.row,
   };
-  const logged = await logAssist(ports, { recorder, entry, title: step.title, path: journal.at });
+  const logged = await ports.log.entry({ recorder, entry, title: step.title, path: journal.at });
   const words = assistAppliedWords(step) + (logged ? '' : ' Its log could not be written.');
   return {
     applied: { kind: 'applied', path: journal.at, words, undo, logged },
@@ -291,10 +292,11 @@ function doneOf(undo: AssistUndo): DoneAction[] {
 
 /** The writes a row comes to, one after another, each through the guard. */
 async function carryOut(
-  journal: Journal & { ports: ApplyAssistPorts },
+  sides: AssistSides,
+  journal: Journal,
   { step, notePaths }: { step: AssistApplyStep; notePaths: readonly VaultPath[] },
 ): Promise<void> {
-  const ports = writing(journal, journal.ports);
+  const ports = writing(journal, sides);
   if (step.duplicateOf !== null) return archiveDuplicate(ports, { step, journal, notePaths });
   await fillIn(ports, { step, journal, notePaths });
   await linkPeople(ports, { step, journal, notePaths: notesAfter(notePaths, journal) });
@@ -302,7 +304,7 @@ async function carryOut(
 
 /** Stamps the item with the task it copies, then archives it: the kept task is never touched. */
 async function archiveDuplicate(
-  ports: ApplyAssistPorts,
+  ports: Writing,
   {
     step,
     journal,
@@ -328,7 +330,7 @@ async function archiveDuplicate(
 
 /** Makes it a task, or files it, filling only what the row found empty: Clarify's one byte-preserving save. */
 async function fillIn(
-  ports: ApplyAssistPorts,
+  ports: Writing,
   {
     step,
     journal,
@@ -356,7 +358,7 @@ async function fillIn(
 
 /** Adds each new person, then links everyone under `people` in one write: a person made is linked, or taken out again. */
 async function linkPeople(
-  ports: ApplyAssistPorts,
+  ports: Writing,
   {
     step,
     journal,
@@ -380,7 +382,7 @@ async function linkPeople(
 
 /** One byte-preserving write of the item's frontmatter where it is now: the guard holds it to what the row left. */
 async function writeOnItem(
-  ports: ApplyAssistPorts,
+  ports: Writing,
   { journal, values }: { journal: Journal; values: Record<string, unknown> },
 ): Promise<void> {
   const { fs, markdown } = ports;
@@ -406,7 +408,7 @@ class NotApplied extends Error {
  * is held to be finished (#911).
  */
 async function failedApply(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     journal,
@@ -432,7 +434,7 @@ async function failedApply(
   if (!changedAnything(journal, undo))
     return nothingLeftChanged(ports, { recorder, journal, reason, title, notePaths });
   const taken = await undoExactly({
-    ports,
+    vault: ports.vault,
     undo: undo.item,
     made: undo.made,
     notePaths: notesAfter(notePaths, journal),
@@ -471,7 +473,7 @@ async function failedApply(
     done: await onDisk(ports, keptEdit ? [journal.from] : [], kept),
     row: journal.row,
   };
-  await logAssist(ports, { recorder: silent, entry, title, path: journal.from });
+  await ports.log.entry({ recorder: silent, entry, title, path: journal.from });
   sayNotDone(recorder, {
     title,
     path: journal.from,
@@ -492,7 +494,7 @@ function changedAnything(journal: Journal, undo: AssistUndo): boolean {
 
 /** A row stopped before it changed anything: closed, and said, with nothing to take back. */
 async function nothingLeftChanged(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     journal,
@@ -514,7 +516,7 @@ async function nothingLeftChanged(
     problem: reason,
     row: journal.row,
   };
-  await logAssist(ports, { recorder: silent, entry, title, path: journal.from });
+  await ports.log.entry({ recorder: silent, entry, title, path: journal.from });
   sayNotDone(recorder, {
     title,
     path: journal.from,
@@ -542,7 +544,7 @@ function addedThenTaken(made: readonly AsRead[], kept: readonly { path: VaultPat
 
 /** A rollback that stopped part-way: logged as a step that keeps the row open, said, and held to be finished. */
 async function partlyTakenBack(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     undo,
@@ -574,7 +576,7 @@ async function partlyTakenBack(
       .filter((path) => !progress.restored.includes(path)),
   ];
   const done = await onDisk(ports, changed, undo.made);
-  await logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: undo.row, done });
+  await ports.log.mark({ kind: 'step', at: ports.clock.localNow(), row: undo.row, done });
   sayNotDone(recorder, {
     title: undo.title,
     path: progress.itemAt,
@@ -591,11 +593,14 @@ async function partlyTakenBack(
 
 /** What is on disk at each of `paths` now, by digest, and each person still there: for a log a person can act on. */
 async function onDisk(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   paths: readonly VaultPath[],
   people: readonly { path: VaultPath }[],
 ): Promise<DoneAction[]> {
-  const read = await ports.fs.readNotes([...paths, ...people.map((person) => person.path)]);
+  const read = await ports.vault.reads.fs.readNotes([
+    ...paths,
+    ...people.map((person) => person.path),
+  ]);
   return read.map((note): DoneAction => {
     const path = note.path as VaultPath;
     const digest = digestOf(note.text);

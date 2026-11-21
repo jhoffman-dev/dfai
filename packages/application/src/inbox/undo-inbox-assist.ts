@@ -12,8 +12,9 @@ import {
 } from '@dfai/domain';
 import type { ActivityRecorder } from '../activity/ports.ts';
 import { linksToUpdate } from '../vault/update-links.ts';
-import type { ApplyAssistPorts, AssistUndo } from './apply-inbox-assist.ts';
-import { assistRecorder, INBOX_ASSIST_RULE, logAssist, logMark, sayNotDone } from './assist-log.ts';
+import type { AssistUndo } from './apply-inbox-assist.ts';
+import { assistRecorder, INBOX_ASSIST_RULE, sayNotDone } from './assist-log.ts';
+import { assistSides, type ApplyAssistPorts, type AssistSides } from './assist-sides.ts';
 import { PartlyUndoneError, undoExactly } from './exact-undo.ts';
 
 /** What undoing one applied row came to. */
@@ -50,6 +51,13 @@ export type NotesRead = () => Promise<
  */
 export async function undoAssistRow(
   ports: ApplyAssistPorts,
+  request: { undo: AssistUndo; notePaths: readonly VaultPath[] },
+): Promise<AssistUndone> {
+  return undoOne(assistSides(ports), request);
+}
+
+async function undoOne(
+  ports: AssistSides,
   {
     undo,
     notePaths,
@@ -72,13 +80,13 @@ export async function undoAssistRow(
     (await linkedSince(undo, notePaths, read));
   if (refusal !== null) return refuse(refusal);
   const mark = (about: AssistIntent) =>
-    logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: undo.row, done: [], about });
+    ports.log.mark({ kind: 'step', at: ports.clock.localNow(), row: undo.row, done: [], about });
   // What an earlier try of this undo put back, as its log says: done, even after a restart.
   const restored = [
     ...new Set([...(undo.progress?.restored ?? []), ...(await restoredBefore(ports, undo.row))]),
   ];
   try {
-    await logMark(ports, {
+    await ports.log.mark({
       kind: 'begun',
       at: ports.clock.localNow(),
       row: undo.row,
@@ -92,7 +100,7 @@ export async function undoAssistRow(
   }
   try {
     const { kept } = await undoExactly({
-      ports,
+      vault: ports.vault,
       undo: undo.item,
       made: undo.made,
       notePaths,
@@ -106,7 +114,7 @@ export async function undoAssistRow(
     // Refused before anything was written: the row is closed again, with why, as it was.
     const why = messageWithoutPaths(cause);
     const entry = closing(ports, undo, [], [{ path: undo.item.to, reason: why }]);
-    await logAssist(ports, { recorder: quiet, entry, title: undo.title, path: undo.item.to });
+    await ports.log.entry({ recorder: quiet, entry, title: undo.title, path: undo.item.to });
     return refuse(why);
   }
 }
@@ -115,7 +123,7 @@ export async function undoAssistRow(
 const quiet: ActivityRecorder = { record: () => undefined };
 
 const closing = (
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   undo: AssistUndo,
   done: DoneAction[],
   left: { path: VaultPath; reason: string }[],
@@ -129,7 +137,7 @@ const closing = (
 });
 
 async function finished(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     undo,
@@ -148,7 +156,7 @@ async function finished(
     ...trashed,
   ];
   const entry = closing(ports, undo, done, [...kept]);
-  const logged = await logAssist(ports, {
+  const logged = await ports.log.entry({
     recorder,
     entry,
     title: undo.title,
@@ -174,7 +182,7 @@ async function finished(
  * unfinished after a restart — said as a warning, and held to be finished.
  */
 async function partly(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   {
     recorder,
     undo,
@@ -182,7 +190,7 @@ async function partly(
   }: { recorder: ActivityRecorder; undo: AssistUndo; cause: PartlyUndoneError },
 ): Promise<AssistUndone> {
   const { itemAt, restored, itemRestored } = cause.progress;
-  const read = await ports.fs.readNotes([itemAt, ...restored]);
+  const read = await ports.vault.reads.fs.readNotes([itemAt, ...restored]);
   // What was put back, and what the item says now: enough to finish it by hand.
   const done = read.map((note): DoneAction => {
     const path = note.path as VaultPath;
@@ -190,7 +198,7 @@ async function partly(
       ? { kind: 'unassisted', from: path, to: path }
       : { kind: 'assisted', from: path, to: path, digest: digestOf(note.text) };
   });
-  await logMark(ports, { kind: 'step', at: ports.clock.localNow(), row: undo.row, done });
+  await ports.log.mark({ kind: 'step', at: ports.clock.localNow(), row: undo.row, done });
   sayNotDone(recorder, {
     title: undo.title,
     path: itemAt,
@@ -208,8 +216,8 @@ async function partly(
  * (#911): the steps since the row was last applied or closed that name a
  * note as put back. A try that read nothing finds nothing.
  */
-async function restoredBefore(ports: ApplyAssistPorts, row: string): Promise<VaultPath[]> {
-  const [log] = await ports.fs.readNotes([logPathFor(INBOX_ASSIST_RULE.id)]);
+async function restoredBefore(ports: AssistSides, row: string): Promise<VaultPath[]> {
+  const [log] = await ports.vault.reads.fs.readNotes([logPathFor(INBOX_ASSIST_RULE.id)]);
   if (log === undefined) return [];
   const entries = parseAssistLog(log.text).filter((entry) => 'row' in entry && entry.row === row);
   const applied = entries.findLastIndex((entry) => entry.kind === 'run' || entry.kind === 'failed');
@@ -223,10 +231,10 @@ async function restoredBefore(ports: ApplyAssistPorts, row: string): Promise<Vau
 }
 
 /** The vault's notes read once, the first time they are asked for. */
-function readOnce(ports: ApplyAssistPorts, notePaths: readonly VaultPath[]): NotesRead {
+function readOnce(ports: AssistSides, notePaths: readonly VaultPath[]): NotesRead {
   let read: Promise<readonly { path: VaultPath; text: string }[]> | null = null;
   return () => {
-    read ??= ports.fs
+    read ??= ports.vault.reads.fs
       .readNotes(notePaths)
       .then((notes) => notes.map((note) => ({ path: note.path as VaultPath, text: note.text })));
     return read;
@@ -234,9 +242,9 @@ function readOnce(ports: ApplyAssistPorts, notePaths: readonly VaultPath[]): Not
 }
 
 /** Why an undo is refused before anything is touched over the people it added; null when they are as made. */
-async function peopleRefusal(ports: ApplyAssistPorts, undo: AssistUndo): Promise<string | null> {
+async function peopleRefusal(ports: AssistSides, undo: AssistUndo): Promise<string | null> {
   for (const person of undo.made) {
-    const read = await ports.fs.readTextFile(person.path).catch(() => null);
+    const read = await ports.vault.reads.fs.readTextFile(person.path).catch(() => null);
     if (read === null) return `${noteTitle(person.path)} is not where it was added.`;
     if (read.text !== person.text)
       return `${noteTitle(person.path)} it was changed since, so it was left as it is.`;
@@ -274,7 +282,7 @@ async function linkedSince(
  * may not have caught up with a link just saved. Null when none does.
  */
 async function linkedElsewhere(
-  ports: ApplyAssistPorts,
+  ports: AssistSides,
   undo: AssistUndo,
   notePaths: readonly VaultPath[],
 ): Promise<string | null> {
@@ -282,7 +290,7 @@ async function linkedElsewhere(
     // As if the person went: every link that would no longer open them is a note linking them.
     const gone = `${person.path.slice(0, -3)} (taken out).md` as VaultPath;
     const update = await linksToUpdate({
-      fs: ports.fs,
+      fs: ports.vault.reads.fs,
       notePaths,
       move: { from: person.path, to: gone },
     });
@@ -310,9 +318,10 @@ export async function undoAssistRows(
   const results: { path: VaultPath; undone: AssistUndone }[] = [];
   let paths = notePaths;
   // Read once for every row (#911): each undo's own writes are to notes it rewrote itself.
-  const notesRead = readOnce(ports, notePaths);
+  const sides = assistSides(ports);
+  const notesRead = readOnce(sides, notePaths);
   for (const { path, undo } of [...undos].reverse()) {
-    const undone = await undoAssistRow(ports, { undo, notePaths: paths, notesRead });
+    const undone = await undoOne(sides, { undo, notePaths: paths, notesRead });
     if (undone.kind === 'undone') paths = notesUndone(paths, undo);
     const each = { path, undone };
     results.push(each);

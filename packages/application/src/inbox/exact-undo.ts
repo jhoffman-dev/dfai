@@ -1,7 +1,7 @@
 import { noteTitle, type AssistIntent, type PassedOver, type VaultPath } from '@dfai/domain';
 import { moveAndStampNotes, type ArchivePorts } from '../archive/archive-notes.ts';
 import type { AsRead } from '../vault/ports.ts';
-import { guardedWrites } from './assist-guard.ts';
+import type { AssistVault } from './assist-guard.ts';
 
 /** What undoing one row's writes on its item needs: the item at both ends, and each other note it rewrote. */
 export interface AssistItemUndo {
@@ -66,7 +66,7 @@ type NoteStand = 'left' | 'restored' | 'changed';
  * as it is, its edit kept (taking back a row an edit landed in mid-apply).
  */
 export async function undoExactly({
-  ports,
+  vault,
   undo,
   made = [],
   notePaths,
@@ -75,7 +75,8 @@ export async function undoExactly({
   itemRestored: itemAlready = false,
   mark,
 }: {
-  ports: ArchivePorts;
+  /** Read from, and written only through a guard made from it. */
+  vault: AssistVault;
   undo: AssistItemUndo;
   /** The people the row made, as made: taken out while they say exactly that. */
   made?: readonly AsRead[];
@@ -87,8 +88,8 @@ export async function undoExactly({
   /** Logs each write before it is made. */
   mark: (intent: AssistIntent) => Promise<void>;
 }): Promise<{ readonly keptEdit: boolean; readonly kept: readonly PassedOver[] }> {
-  const standing = await standingOf(ports, undo, new Set(already));
-  const blocker = blockerOf(ports, standing, keepItemEdit);
+  const standing = await standingOf(vault.reads, undo, new Set(already));
+  const blocker = blockerOf(vault.reads, standing, keepItemEdit);
   const progress = { done: [] as string[], restored: [...already], itemRestored: itemAlready };
   const begun = already.length > 0 || itemAlready || standing.item?.stand === 'restored';
   if (blocker !== null) {
@@ -100,7 +101,7 @@ export async function undoExactly({
     });
   }
   const item = standing.item!;
-  const guard = guardedWrites(ports, {
+  const guard = vault.guard({
     known: knownOf(item, standing, made),
     items: new Set([item.at]),
     mark,

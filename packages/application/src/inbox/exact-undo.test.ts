@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { createVaultPath, type AssistIntent, type VaultPath } from '@dfai/domain';
 import { automationVault } from '../testing/automation-vault.ts';
-import { guardedWrites } from './assist-guard.ts';
+import { assistVault, guardedWrites } from './assist-guard.ts';
 import { clarifyInboxItem } from './clarify-inbox-item.ts';
 import {
   PartlyUndoneError,
@@ -71,7 +71,7 @@ async function filed() {
   };
   const run = (
     extra: { restored?: readonly VaultPath[]; itemRestored?: boolean; keepItemEdit?: boolean } = {},
-  ) => undoExactly({ ports: vault.ports, undo, notePaths: notePaths(), mark, ...extra });
+  ) => undoExactly({ vault: assistVault(vault.ports), undo, notePaths: notePaths(), mark, ...extra });
   return {
     vault,
     undo,
