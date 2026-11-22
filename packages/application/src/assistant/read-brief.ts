@@ -9,6 +9,7 @@ import {
   type VaultPath,
 } from '@dfai/domain';
 import type { Clock } from '../ports.ts';
+import { wallTimeOn, type DueClock } from '../review/review-moment.ts';
 import { readLinkedPage, type LinkedSection } from '../linked-pages/read-linked-page.ts';
 import {
   citedEntity,
@@ -53,7 +54,7 @@ export async function readBrief({
   date,
 }: {
   reads: AssistantReads;
-  clock: Pick<Clock, 'today'>;
+  clock: DueClock;
   path: VaultPath;
   /** `YYYY-MM-DD`; today, on the app's clock, when null. */
   date: string | null;
@@ -80,6 +81,7 @@ export async function readBrief({
     sourcePaths: sourced,
     followUps: followUps.value,
     day,
+    time: wallTimeOn(clock, day),
   });
   const { value: context } = cited;
   const words = status ?? NO_STATUS;

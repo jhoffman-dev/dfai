@@ -29,6 +29,7 @@ import { KEYS_HOME, type UndoLast } from './row-keys.ts';
 import { keyHintStrip } from './key-hints.tsx';
 import { useVirtualRows } from './virtual-rows.ts';
 import { delayedSpinner } from './delayed-spinner.tsx';
+import { dueTimeLabel } from './due-time.tsx';
 
 /** What the page did to a task, for the toast that offers to take it back. */
 export type TodayAction =
@@ -852,10 +853,15 @@ function rowDetails({
 }
 
 function dueDay(task: TodayTask, sectionId: TodaySectionId): ReactNode {
-  if (sectionId === 'dueToday') return <span key="due">Due today</span>;
+  // The time a due names (#928), beside its day, only when it names one.
+  const time = task.dueTime === undefined ? null : dueTimeLabel(task.dueTime);
+  if (sectionId === 'dueToday') {
+    return <span key="due">Due today{time}</span>;
+  }
   return (
     <span key="due" className={sectionId === 'overdue' ? 'today__late' : undefined}>
       Due {task.due}
+      {time}
     </span>
   );
 }

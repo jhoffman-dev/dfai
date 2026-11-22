@@ -65,6 +65,18 @@ describe('POST /v1/inbox/clarify', () => {
     );
   });
 
+  it('writes a due day sent as that day alone, with no time it did not send (#928)', async () => {
+    const api = apiFixture({
+      files: {
+        'Inbox/Call Sam.md': '---\ntype: task\nstatus: inbox\ndue: 2026-10-20T15:30\n---\n',
+      },
+    });
+    await api.send(clarify({ path: 'Inbox/Call Sam.md', due: '2026-10-21' }));
+    expect(api.files.get('Inbox/Call Sam.md')?.text).toBe(
+      '---\ntype: task\nstatus: inbox\ndue: 2026-10-21\n---\n',
+    );
+  });
+
   it('clears a date given as null', async () => {
     const api = apiFixture({
       files: { 'Inbox/Call Sam.md': '---\ntype: task\nstatus: inbox\ndue: 2026-10-20\n---\n' },

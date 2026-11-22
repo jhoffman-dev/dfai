@@ -51,6 +51,15 @@ describe('clarificationOf', () => {
       due: '2026-11-02',
     });
   });
+
+  it('asks a new day to keep the time a timed due names, as the row says it does (#928)', () => {
+    const timed = { ...TASK, due: '2026-10-30', dueTime: '15:30' };
+    expect(clarificationOf(timed, { due: '2026-11-02' })).toEqual({
+      due: '2026-11-02',
+      keepsDueTime: true,
+    });
+    expect(clarificationOf(timed, { due: '' })).toEqual({ due: null });
+  });
 });
 
 describe('asksWhoItWaitsOn', () => {

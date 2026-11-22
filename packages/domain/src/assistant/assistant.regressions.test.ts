@@ -163,6 +163,7 @@ describe('a meeting dated a day the calendar does not have', () => {
     sources: new Map<string, string>(),
     hasBlock: () => true,
     day: '2999-03-13',
+    time: null,
   };
 
   for (const date of ['2999-02-30', '2999-13-01', '2999-00-10']) {
