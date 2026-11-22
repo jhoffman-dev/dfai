@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react';
 import {
   calendarEvents,
   clockLabel,
+  dueEventTime,
   movedEvent,
   rangeDays,
   resizedEnd,
@@ -128,8 +129,14 @@ export function CalendarView({
 }) {
   const holdingRef = useRef(false);
   const { events, unscheduled } = useMemo(
-    () => calendarEvents({ rows, dateKey, endKey }),
-    [rows, dateKey, endKey],
+    () =>
+      calendarEvents({
+        rows,
+        dateKey,
+        endKey,
+        ...(taskDues && { readStart: dueEventTime }),
+      }),
+    [rows, dateKey, endKey, taskDues],
   );
   const gestures = useGestures({ dateKey, endKey, onOpenNote, onReschedule, onCreate, holdingRef });
   const chips = useMemo(() => fields.filter((key) => key !== dateKey), [fields, dateKey]);

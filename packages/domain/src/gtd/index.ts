@@ -58,6 +58,7 @@ export {
   compareDues,
   datedDueOf,
   dueAt,
+  dueEventTime,
   dueOf,
   dueOnDay,
   dueOfDated,

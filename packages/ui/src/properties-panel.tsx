@@ -5,6 +5,7 @@ import {
   dueWithTime,
   formatPropertyDate,
   isWallTime,
+  writtenDue,
   linkedNames,
   hasOpenQuote,
   listAsInput,
@@ -21,6 +22,7 @@ import {
   withLink,
   withoutLink,
   type PropertyDef,
+  type TaskDue,
   type VaultPath,
 } from '@dfai/domain';
 import { pillPaint } from './pill-paint.ts';
@@ -44,6 +46,12 @@ export interface PropertyRow {
    * due, a date with an optional time of day (#928). The caller decides.
    */
   readonly editor?: 'priority' | 'dueTime';
+  /**
+   * A task's due as the due rules read it (#928), where the row is one: what
+   * its date shows, so `T24:00` reads as its day as it does everywhere; null
+   * for one that holds no due, shown as written. The caller reads it.
+   */
+  readonly due?: TaskDue | null;
 }
 
 /** Makes a note of type `target` called `name`; resolves with the link to write. */
@@ -277,7 +285,13 @@ function PropertyEditor({
     case 'date':
       return (
         <>
-          <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />
+          <DateEditor
+            id={id}
+            label={row.def.label}
+            value={text}
+            onChange={onChange}
+            {...(row.due !== undefined && { due: row.due })}
+          />
           {row.editor === 'dueTime' && (
             <DueTimeEditor label={row.def.label} value={text} onChange={onChange} />
           )}
@@ -559,6 +573,15 @@ function TextEditor({ id, row, text, onChange }: EditorProps) {
 }
 
 /**
+ * A date as a person reads it. A task's due is shown as read (#928): its day,
+ * and its time only when it names a clock time; one that holds no due, as written.
+ */
+function shownDate(value: string, due: TaskDue | null | undefined): string {
+  if (due === undefined) return formatPropertyDate(value) ?? value;
+  return due === null ? value : (formatPropertyDate(writtenDue(due)) ?? value);
+}
+
+/**
  * A due's time of day (#928), beside its date: the platform's time field,
  * empty for a due that names only its day. Like the date, it writes when it
  * is left or Enter is pressed, and only a whole time: a part erased puts the
@@ -639,11 +662,14 @@ function DateEditor({
   label,
   value,
   onChange,
+  due,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: unknown) => void;
+  /** A task's due as read (`PropertyRow.due`): shown as the other surfaces show it. */
+  due?: TaskDue | null;
 }) {
   const day = value.slice(0, 10);
   const [draft, setDraft] = useState(day);
@@ -653,7 +679,7 @@ function DateEditor({
     setShownDay(day);
     setDraft(day);
   }
-  const shown = value === '' ? null : (formatPropertyDate(value) ?? value);
+  const shown = value === '' ? null : shownDate(value, due);
 
   const commit = () => {
     if (draft === '' || draft === day) setDraft(day);

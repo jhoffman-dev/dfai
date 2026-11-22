@@ -13,7 +13,7 @@
  * assistant's items, a calendar of tasks by due. The query language cannot
  * (it compares `value_date` by day in SQL; #932).
  */
-import { clockLabel, readEventTime } from '../calendar/calendar-event.ts';
+import { clockLabel, readEventTime, type EventTime } from '../calendar/calendar-event.ts';
 import { indexablePropertiesOf } from '../index/property-value.ts';
 import { TASK_KEYS, TASK_TYPE } from './gtd-status.ts';
 
@@ -63,6 +63,20 @@ export function dueOfDated(dated: string): TaskDue {
     time: minutes === null ? null : clockLabel(minutes),
     order: dated.replaceAll(' ', 'T'),
   };
+}
+
+/**
+ * A due as a calendar of tasks places it: on its day, at its time when it
+ * has one, all day when it names only its day or a time that is no clock
+ * time (`T24:00`) — as Today and every other surface read it. Null for a
+ * value that holds no due, which such a calendar counts as unscheduled.
+ */
+export function dueEventTime(value: unknown): EventTime | null {
+  const due = dueOf(value);
+  if (due === null) return null;
+  if (due.time === null) return { date: due.day, minutes: null };
+  const [hours, minutes] = due.time.split(':').map(Number) as [number, number];
+  return { date: due.day, minutes: hours * 60 + minutes };
 }
 
 /** A due the app writes: its day, and its time when it has one. */

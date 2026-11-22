@@ -141,15 +141,16 @@ export function useNoteProperties({
       if (ranked && def.key === TASK_KEYS.priority) {
         return { def, editor: 'priority' as const, value, error: null };
       }
-      // A task's due that holds a day takes an optional time of day (#928): one
-      // with none to give it to — empty, `next Friday` — would write nothing.
-      const takesTime =
-        isTask && def.key === TASK_KEYS.due && def.kind === 'date' && dueOf(value) !== null;
+      // A task's due is read as every surface reads it (#928), and one that holds a
+      // day takes an optional time; one with none — empty, `next Friday` — would write nothing.
+      const isDue = isTask && def.key === TASK_KEYS.due && def.kind === 'date';
+      const due = isDue ? dueOf(value) : undefined;
       return {
         def,
         value,
         error: validatePropertyValue({ def, value }) ?? linkProblems[def.key] ?? null,
-        ...(takesTime && { editor: 'dueTime' as const }),
+        ...(due !== undefined && { due }),
+        ...(due !== undefined && due !== null && { editor: 'dueTime' as const }),
       };
     });
   }, [note, isView, type, properties, addedKinds, linkProblems, ranked, isTask]);

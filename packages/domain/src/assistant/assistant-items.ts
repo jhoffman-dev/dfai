@@ -141,7 +141,8 @@ export function loopTask({
   waiting?: boolean;
 }): LoopTask {
   const status = textOf(row.values[words.key]) ?? (waiting ? WAITING_STATUS : null);
-  const due = dayOf(row.values[TASK_KEYS.due]);
+  // The day of its due as every surface reads one (#928): `2026-12-04T23:60` is no due.
+  const due = dueOf(row.values[TASK_KEYS.due])?.day ?? null;
   const waits = status === WAITING_STATUS;
   const open = words.done === null || status !== words.done;
   return {
@@ -170,7 +171,7 @@ export interface FollowUpTask extends LoopTask {
 
 /** A follow-up the index found from a page or its meetings, as an item. */
 export function followUpTask(row: FollowUpRow, context: ItemContext): FollowUpTask {
-  const due = dayOf(row.due);
+  const due = dueOf(row.due)?.day ?? null;
   const waits = row.status === WAITING_STATUS;
   const meeting =
     row.meeting === null || row.direct
