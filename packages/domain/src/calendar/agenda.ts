@@ -3,8 +3,15 @@
  * order they happen, and what was due before today and is still not done in
  * a group of its own at the top.
  */
+import { dueAt, isPastDue } from '../gtd/task-due.ts';
 import { addDays, daysBetween } from '../timeline/timeline.ts';
-import { byTimeOfDay, effectiveEnd, occursOn, type CalendarEvent } from './calendar-event.ts';
+import {
+  byTimeOfDay,
+  clockLabel,
+  effectiveEnd,
+  occursOn,
+  type CalendarEvent,
+} from './calendar-event.ts';
 import { dateParts } from './calendar-range.ts';
 
 export interface AgendaDay {
@@ -29,17 +36,37 @@ function finalDay(event: CalendarEvent): string {
   return addDays(end.date, -1) ?? end.date;
 }
 
-/** Whether a note is past and still open: it ended before today and is not done. */
+/**
+ * A calendar of tasks by their due (`readsTaskDue`): its notes are dues, and
+ * `time` is the wall-clock time now, `HH:MM`, or null where it is not known.
+ */
+export interface AgendaDues {
+  readonly time: string | null;
+}
+
+/**
+ * Whether a note is past and still open: it ended before today and is not
+ * done. In a calendar of tasks by due, a due with no end is past as Today
+ * says it is (#928): a timed one the minute after its time.
+ */
 export function isOverdue({
   event,
   today,
   isDone,
+  dues,
 }: {
   event: CalendarEvent;
   today: string;
   isDone: (values: Readonly<Record<string, unknown>>) => boolean;
+  dues?: AgendaDues | undefined;
 }): boolean {
-  return daysBetween(finalDay(event), today) > 0 && !isDone(event.values);
+  if (isDone(event.values)) return false;
+  if (dues !== undefined && event.end === null) {
+    const { date, minutes } = event.start;
+    const due = dueAt(date, minutes === null ? null : clockLabel(minutes));
+    return isPastDue(due, { today, time: dues.time });
+  }
+  return daysBetween(finalDay(event), today) > 0;
 }
 
 /**
@@ -52,14 +79,17 @@ export function buildAgenda({
   days,
   today,
   isDone,
+  dues,
 }: {
   events: readonly CalendarEvent[];
   from: string;
   days: number;
   today: string;
   isDone: (values: Readonly<Record<string, unknown>>) => boolean;
+  /** Given for a calendar of tasks by their due: see {@link isOverdue}. */
+  dues?: AgendaDues | undefined;
 }): Agenda {
-  const overdue = events.filter((event) => isOverdue({ event, today, isDone }));
+  const overdue = events.filter((event) => isOverdue({ event, today, isDone, dues }));
   const open = events.filter((event) => !overdue.includes(event));
   const listed: AgendaDay[] = [];
   if (dateParts(from) !== null) {

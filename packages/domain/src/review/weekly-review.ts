@@ -4,6 +4,14 @@ import {
   TASK_KEYS,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import {
+  compareDues,
+  dueAt,
+  dueOfDated,
+  isPastDue,
+  type DueMoment,
+  type TaskDue,
+} from '../gtd/task-due.ts';
 import type { TaskPriority } from '../gtd/task-priority.ts';
 import { addDays } from '../timeline/timeline.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
@@ -16,6 +24,17 @@ export interface ReviewTask {
   readonly status: GtdStatus | null;
   /** `YYYY-MM-DD`, or null when it has none. */
   readonly due: string | null;
+  /**
+   * The time of day its `due` names (#928), `HH:MM` wall-clock time. Absent
+   * when the due names only its day, or the read did not say.
+   */
+  readonly dueTime?: string;
+  /**
+   * Its `due` as the index dates it (`value_date`), where that is more than
+   * its day — `2026-12-04T15:30`, `2026-12-04 09:00:59`: what the due rules
+   * read its time and its order from (#928). Absent for a date-only due.
+   */
+  readonly dueAt?: string;
   /** `YYYY-MM-DD`: the day it comes back into play; null when it is not deferred. */
   readonly defer: string | null;
   /**
@@ -139,6 +158,11 @@ export interface ReviewMoment {
   readonly today: string;
   /** Milliseconds since the epoch, from the injected clock. */
   readonly now: number;
+  /**
+   * The wall-clock time, `HH:MM`, from the injected clock (#928): what a timed
+   * due today has passed by. Absent when not asked, and a timed due today has not.
+   */
+  readonly time?: string | null;
 }
 
 /**
@@ -168,7 +192,7 @@ export function weeklyReview({
       ),
     ),
     projectsWithoutNextAction: stalledProjects(projects),
-    overdue: inPlay.filter((task) => isOverdue(task, at.today)).sort(byDueThenTitle),
+    overdue: inPlay.filter((task) => isOverdue(task, at)).sort(byDueThenTitle),
     untouchedSomeday: oldestFirst(
       inPlay.filter(
         (task) =>
@@ -202,9 +226,38 @@ function untouchedFor(task: ReviewTask, days: number, at: ReviewMoment): boolean
   return task.modified !== null && at.now - task.modified > days * DAY_MS;
 }
 
-/** Due before today, on a status that promises its day. */
-export function isOverdue(task: ReviewTask, today: string): boolean {
-  return task.due !== null && task.due < today && promisesItsDay(task);
+/**
+ * Its due has passed — a day before today, or a time today gone by (#928) —
+ * on a status that promises its day.
+ */
+export function isOverdue(task: ReviewTask, at: DueMoment): boolean {
+  const due = dueOfTask(task);
+  return due !== null && isPastDue(due, at) && promisesItsDay(task);
+}
+
+/**
+ * The next time of day one of `tasks` due today turns overdue, `HH:MM`, after
+ * the wall time `at` (#928): when a page left open must read again for it to
+ * move. Null when none will today.
+ */
+export function nextDueTurnAmong(tasks: readonly ReviewTask[], at: DueMoment): string | null {
+  const times = tasks
+    .filter((task) => task.due === at.today && promisesItsDay(task))
+    .flatMap((task) => dueOfTask(task)?.time ?? [])
+    .filter((time) => typeof at.time !== 'string' || time >= at.time);
+  return times.length === 0 ? null : times.reduce((first, time) => (time < first ? time : first));
+}
+
+/** A task's due as its read carried it: its day, and its time when it has one. */
+export function dueOfTask(task: Pick<ReviewTask, 'due' | 'dueAt' | 'dueTime'>): TaskDue | null {
+  if (task.due === null) return null;
+  // As the index dated it where the read carried that; else its day and time.
+  return task.dueAt === undefined ? dueAt(task.due, task.dueTime ?? null) : dueOfDated(task.dueAt);
+}
+
+/** The earliest due first, a date-only due before the timed ones on its day; no due last. */
+export function byDue(left: ReviewTask, right: ReviewTask): number {
+  return compareDues(dueOfTask(left), dueOfTask(right));
 }
 
 /** Longest untouched first: what has waited longest is asked about first. */
@@ -219,7 +272,7 @@ export function byOldestChange(left: ReviewTask, right: ReviewTask): number {
 }
 
 function byDueThenTitle(left: ReviewTask, right: ReviewTask): number {
-  return (left.due ?? '').localeCompare(right.due ?? '') || byTitle(left, right);
+  return byDue(left, right) || byTitle(left, right);
 }
 
 export function byTitle(

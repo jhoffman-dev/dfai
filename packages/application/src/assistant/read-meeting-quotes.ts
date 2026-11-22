@@ -111,6 +111,8 @@ export async function readMeetingQuotes({
     sources: new Map<string, string>(),
     hasBlock: () => false,
     day: today,
+    // Meetings are dated, never due: no time is asked about.
+    time: null,
   };
   const listed = sections.flatMap((section) => section.rows).map((row) => datedNote(row, context));
   const inRange = newestFirst(

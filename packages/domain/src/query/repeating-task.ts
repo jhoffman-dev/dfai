@@ -1,3 +1,4 @@
+import { dueOnDay } from '../gtd/task-due.ts';
 import type { ObjectType } from '../types/property-def.ts';
 import { nextOccurrence, parseRecurrence } from './recurrence.ts';
 
@@ -34,8 +35,9 @@ export function repeatingTaskUpdate({
   const next = nextOccurrence(from, recurrence);
   if (next === null) return null;
 
+  // Whatever followed the day rolls on with it (#928): a time stays that time; a day stays a day.
   return {
-    [DUE_KEY]: next,
+    [DUE_KEY]: dueOnDay(due, next),
     [statusKey]: resetStatus,
     // Kept so it is possible to tell a rolled-over task from one never done.
     [LAST_COMPLETED_KEY]: from.slice(0, 10),

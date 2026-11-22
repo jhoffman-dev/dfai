@@ -13,7 +13,6 @@ import {
   archiveTaskChange,
   readWeeklyReview,
   type ActivityLog,
-  type Clock,
   type IndexPort,
   type MarkdownPort,
   type VaultFsPort,
@@ -21,6 +20,7 @@ import {
 } from '@dfai/application';
 import type { OpenEditors } from '../panes/open-editors.ts';
 import { errorMessage } from '../query/error-message.ts';
+import { useDueTurns } from '../today/use-due-turns.ts';
 import { useReviewWrites } from './use-review-writes.ts';
 
 export interface WeeklyReviewOptions {
@@ -31,7 +31,7 @@ export interface WeeklyReviewOptions {
   };
   /** A note open in a pane is written through the pane, as every view writes it. */
   readonly editors: OpenEditors;
-  readonly clock: Pick<Clock, 'today' | 'now'>;
+  readonly clock: Parameters<typeof readWeeklyReview>[0]['clock'];
   /** The vault's types: the review is offered once tasks are, and a project moves among its type's statuses. */
   readonly types: readonly ObjectType[];
   /** Changes when the index does, so the review shows what it now holds. */
@@ -65,6 +65,8 @@ export function useWeeklyReview(options: WeeklyReviewOptions) {
   // The parts of the ports the read is made through: the window hands new
   // ports each time it lists the tree again, which is no reason to read (#325).
   const { index, fs, markdown } = ports;
+  // The next time a task due today turns overdue (#928): the review reads again once it has passed, as Today does.
+  const dueTurns = useDueTurns(clock, open, read?.report?.nextDueTurn ?? null);
   useEffect(() => {
     if (!open || !indexReady) return;
     let cancelled = false;
@@ -78,7 +80,8 @@ export function useWeeklyReview(options: WeeklyReviewOptions) {
     return () => {
       cancelled = true;
     };
-  }, [index, fs, markdown, clock, indexKey, indexReady, open, startInInbox]);
+    // `dueTurns` is here to read again when a due's time passes; the read takes the moment from the clock.
+  }, [index, fs, markdown, clock, indexKey, indexReady, open, startInInbox, dueTurns]);
 
   // Only what this index answered, and only while it is ready: after a vault
   // switch or during a rebuild the last review's paths are not this vault's,

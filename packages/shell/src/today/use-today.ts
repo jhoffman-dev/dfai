@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import {
   choosesForToday,
+  nextDueTurn,
   taskDeferral,
   tasksStartInInbox,
   taskTypeOf,
@@ -28,6 +29,7 @@ import { todayActionWords, useSteadyCallback, type TodayAction } from '@dfai/ui'
 import { errorMessage } from '../query/error-message.ts';
 import { keptTodayReport } from './kept-today-report.ts';
 import { useDayOf } from './use-day-of.ts';
+import { useDueTurns } from './use-due-turns.ts';
 import { createTodayWrites, NOTHING_SETTLING, type TodayWrites } from './today-writes.ts';
 import { useReviewWrites, type ReviewWritesOptions } from '../review/use-review-writes.ts';
 import type { Toasts } from '../toasts/toasts.ts';
@@ -127,6 +129,13 @@ export function useToday(options: TodayOptions) {
   const vaultNow = useRef({ index: ports.index, vaultKey });
   vaultNow.current = { index: ports.index, vaultKey };
   const day = useDayOf(clock, open);
+  // The next time a task due today turns overdue (#928): the page reads again once it has passed.
+  const report = read?.report ?? null;
+  const turn =
+    report === null
+      ? null
+      : nextDueTurn(report, { today: report.today, time: report.time ?? null });
+  const dueTurns = useDueTurns(clock, open, turn);
   // The types the sidebar's Inbox count is read with, so the page's Inbox link counts the same.
   const startInInbox = tasksStartInInbox(types);
   // Whether tasks can be chosen for today (#108): worked out once, from the vault's Task type.
@@ -193,7 +202,7 @@ export function useToday(options: TodayOptions) {
     return () => {
       cancelled = true;
     };
-    // `day` is here to read again when it turns; the read takes the day from the clock itself.
+    // `day` and `dueTurns` are here to read again when they turn; the read takes the moment from the clock itself.
   }, [
     index,
     fs,
@@ -204,6 +213,7 @@ export function useToday(options: TodayOptions) {
     indexReady,
     open,
     day,
+    dueTurns,
     startInInbox,
     choosing,
     ranked,

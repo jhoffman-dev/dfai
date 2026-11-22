@@ -55,6 +55,25 @@ export {
 } from './task-priority.ts';
 export type { TaskPriority } from './task-priority.ts';
 export {
+  compareDues,
+  datedDueOf,
+  dueAt,
+  dueEventTime,
+  dueOf,
+  dueOnDay,
+  dueRescheduled,
+  movedDue,
+  dueOfDated,
+  dueTimeOfDated,
+  dueWithTime,
+  isPastDue,
+  isWallTime,
+  readsTaskDue,
+  wallTimeOf,
+  writtenDue,
+} from './task-due.ts';
+export type { DueMoment, TaskDue } from './task-due.ts';
+export {
   listsTasksAlone,
   TASK_ROW_COLUMNS,
   taskRowFacts,

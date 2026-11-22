@@ -12,6 +12,7 @@ import {
   TASK_TYPE,
   type GtdStatus,
 } from '../gtd/gtd-status.ts';
+import { dueOf } from '../gtd/task-due.ts';
 import { taskPriorityOf, type TaskPriority } from '../gtd/task-priority.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
 import {
@@ -70,6 +71,8 @@ export interface InboxTask {
   readonly defer: string | null;
   /** `YYYY-MM-DD`, or null. */
   readonly due: string | null;
+  /** The time of day its due names (#928), `HH:MM`; absent for a date-only due. */
+  readonly dueTime?: string;
   /**
    * How urgent it is, 1 to 4 (#913); null for none, or for a value that is
    * not one. Absent where the vault does not rank its tasks 1 to 4 (`ranksTasks`)
@@ -448,6 +451,11 @@ export function inboxItem(row: {
   };
 }
 
+/** The time of the first item of `due` the index dates, from every item as written ({@link allItems}). */
+function dueTimeOfWritten(written: unknown): string | null {
+  return typeof written === 'string' ? (dueOf(written.split('\u001f'))?.time ?? null) : null;
+}
+
 function inboxTask(row: {
   status?: unknown;
   project?: unknown;
@@ -455,9 +463,11 @@ function inboxTask(row: {
   waitingOnNames?: unknown;
   defer?: unknown;
   due?: unknown;
+  dueWritten?: unknown;
   priority?: unknown;
   priorityWritten?: unknown;
 }): InboxTask {
+  const dueTime = dueTimeOfWritten(row.dueWritten);
   return {
     status: gtdStatusOf(row.status),
     project: pathOrNull(row.project),
@@ -465,6 +475,7 @@ function inboxTask(row: {
     waitingOnNames: waitingOnNames(row.waitingOnNames),
     defer: textOrNull(row.defer),
     due: textOrNull(row.due),
+    ...(dueTime !== null && { dueTime }),
     // Absent where the vault does not rank its tasks 1 to 4: its row offers no priority.
     ...(Object.hasOwn(row, 'priority') && {
       priority: taskPriorityOf(row.priority),

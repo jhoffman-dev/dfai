@@ -379,6 +379,15 @@ describe('what is written, resolved or not, on any item (#903 round 3)', () => {
     });
   });
 
+  it('holds a due written with a time as set: never filled over, the day compared (#928)', () => {
+    const timed = written({ due: '2026-12-01', dueWritten: '2026-12-01T15:30' });
+    expect(stepOf({ due: '2026-12-01' }, timed)).toMatchObject({ kind: 'leave' });
+    expect(stepOf({ due: '2026-12-02' }, timed)).toEqual({
+      kind: 'ask',
+      question: 'You set it due 2026-12-01T15:30; Claude suggests 2026-12-02.',
+    });
+  });
+
   it('asks when a due date is written but reads as no day', () => {
     expect(stepOf({ due: '2026-12-01' }, written({ dueWritten: 'next Friday' }))).toEqual({
       kind: 'ask',

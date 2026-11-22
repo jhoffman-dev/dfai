@@ -1,4 +1,5 @@
 export {
+  nextDueTurn,
   rowToFocusAfter,
   TODAY_DEFER_DAYS,
   TODAY_MOVES,
