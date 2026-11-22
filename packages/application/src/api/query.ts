@@ -6,6 +6,7 @@ import {
   MAX_QUERY_LIMIT,
   queryRowLimit,
   type FilterOperator,
+  type ObjectType,
   type QueryFilter,
   type QuerySort,
   type ViewQuery,
@@ -49,6 +50,7 @@ export async function queryRoute(request: VaultRequest): Promise<RouteResult> {
   const type = types.find((candidate) => candidate.name === query.type) ?? null;
   const rows = await runViewQuery(request, withChecklistProgress(query, type), {
     includeArchived,
+    type,
   });
   return { status: 200, body: schedule ? await withSchedules(request, rows) : rows };
 }
@@ -105,7 +107,14 @@ function leadingKeyword(sql: string): string {
 export async function runViewQuery(
   request: VaultRequest,
   query: ViewQuery,
-  { includeArchived = false }: { includeArchived?: boolean } = {},
+  {
+    includeArchived = false,
+    type = null,
+  }: {
+    includeArchived?: boolean;
+    /** The type the query lists, so a filter on a list reads only the notes that match (`runView`). */
+    type?: ObjectType | null;
+  } = {},
 ): Promise<ApiRows> {
   const limit = queryRowLimit(query.limit);
   try {
@@ -113,6 +122,7 @@ export async function runViewQuery(
       const result = await runView({
         index: request.index,
         query: { ...query, limit: fetched },
+        type,
         includeArchived,
       });
       const rows = userSpaceRows(result);
