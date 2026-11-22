@@ -491,6 +491,7 @@ function useShownView({
   const run = useViewResult({
     index,
     query: layoutRun?.query ?? null,
+    type,
     indexKey,
     indexKeyNow,
     includeArchived,
@@ -517,12 +518,15 @@ function useShownView({
 function useViewResult({
   index,
   query,
+  type,
   indexKey,
   indexKeyNow,
   includeArchived,
 }: {
   index: IndexPort;
   query: ViewQuery | null;
+  /** The type the view lists, whose list columns a filter asks the index about item by item. */
+  type: ObjectType | null;
   /** The index's news: the view runs again on it. */
   indexKey: string;
   /** The index's own key now, which each run is stamped with as it begins (#698). */
@@ -547,7 +551,7 @@ function useViewResult({
     begun.current += 1;
     const read = { at: begun.current, indexKey: indexKeyNow() };
     setError(null);
-    runView({ index, query, includeArchived, resolveLink })
+    runView({ index, query, type, includeArchived, resolveLink })
       .then((found) => {
         if (!cancelled) setRan({ result: found, read });
       })
@@ -561,7 +565,7 @@ function useViewResult({
     return () => {
       cancelled = true;
     };
-  }, [index, query, indexKey, indexKeyNow, includeArchived, resolveLink]);
+  }, [index, query, type, indexKey, indexKeyNow, includeArchived, resolveLink]);
 
   return { result: ran.result, read: ran.read, runsBegun, error, setError };
 }

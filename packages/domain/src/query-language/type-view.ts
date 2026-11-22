@@ -1,4 +1,6 @@
 import { foldedTypeName, foldedTypeSql } from '../types/note-type-sql.ts';
+import type { ObjectType } from '../types/property-def.ts';
+import { isViewColumn } from '../types/type-name.ts';
 import { holdsMany, shownValue } from './field-sql.ts';
 import type { FieldKind, QueryField } from './fields.ts';
 
@@ -17,6 +19,17 @@ export interface TypeViewSpec {
 }
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * The columns a type's view is made of: each property it declares, but one
+ * named like a column the view has of its own (`isViewColumn`), which SQLite
+ * would rename to `modified:1`.
+ */
+export function typeViewColumns(type: Pick<ObjectType, 'properties'>): TypeViewColumn[] {
+  return type.properties
+    .filter((property) => !isViewColumn(property.key))
+    .map((property) => ({ key: property.key, kind: property.kind, many: property.many }));
+}
 
 /**
  * The `SELECT` behind a type's view, `v_<type>` — the type's table, the
@@ -64,8 +77,27 @@ const heldOf = (key: string) => `p.key = '${key}'`;
  * as the grouped pivot read it. Over no rows it is what the pivot's was:
  * count 0, everything else null.
  */
-const cellSql = (key: string, aggregate: string) =>
-  `(SELECT ${aggregate} FROM props AS p WHERE p.path = n.path AND p.key = '${key}' AND ${HELD})`;
+const cellSql = (key: string, aggregate: string, held = HELD) =>
+  `(SELECT ${aggregate} FROM props AS p WHERE p.path = n.path AND p.key = '${key}' AND ${held})`;
+
+/**
+ * The rows a list of text holds as items: a held row whose text is no blank.
+ * A held row with no text (an object item) adds nothing to the joined cell,
+ * as `group_concat` passes over null, and a row whose text is blank is not
+ * held, so the cell is exactly these rows' texts (#923). Read through
+ * `props_path` alone, without each row's `value_json`.
+ */
+const LIST_ITEM = "p.value_text <> ''";
+
+/**
+ * Whether a column's cell is its items' texts joined by `', '` in written
+ * order: a list (`many`, or a multi-select) of a kind shown as its text, so
+ * `LIST_ITEM` picks its items.
+ */
+export function joinsTextItems(column: TypeViewColumn): boolean {
+  const field = asField(column);
+  return field.many && shownValue(field) === 'p.value_text';
+}
 
 /**
  * The row first in written order, as 19 digits that sort by it: `idx`, then
@@ -76,8 +108,17 @@ const ORDERED = '(p.idx * 4294967296 + p.rowid + 1000000000000000000)';
 
 /** One column's cell, as the query draws the field (`cellOf`), out of its note's rows. */
 function columnSql(column: TypeViewColumn): string {
+  if (joinsTextItems(column)) return listCellSql(column.key);
   return cellSql(column.key, columnAggregate(column));
 }
+
+/**
+ * A list of text's cell, as the view writes it: its items joined in written
+ * order. A filter asks whether the view the index holds was written with it
+ * (`list-filter.ts`), so this text is the view's and the filter's alike.
+ */
+export const listCellSql = (key: string): string =>
+  cellSql(key, "group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid)", LIST_ITEM);
 
 /** How a column's cell is made of its rows, by the same rules as `valueRowsSql`. */
 function columnAggregate(column: TypeViewColumn): string {
