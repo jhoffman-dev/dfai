@@ -10,6 +10,7 @@ import {
   TASK_TYPE,
   WAITING_STATUS,
 } from '../gtd/gtd-status.ts';
+import { dueOnDay } from '../gtd/task-due.ts';
 import { isTaskNote, taskRuleChanges } from '../gtd/task-rules.ts';
 import { TASK_TYPE_FILE, type ClarifyVocabulary } from '../gtd/task-type.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
@@ -38,6 +39,12 @@ export interface Clarification {
   readonly defer?: string | null;
   /** `YYYY-MM-DD`. */
   readonly due?: string | null;
+  /**
+   * Whether a new `due` day keeps the time of day the due is written with
+   * (#928), as an Inbox row's day field says it does. Otherwise — the API —
+   * a day sent is that day, with no time.
+   */
+  readonly keepsDueTime?: boolean;
   /** Where it can be done; an empty list takes them away. */
   readonly contexts?: readonly string[];
   /** How urgent it is, 1 to 4 (#913); null takes it away. */
@@ -88,7 +95,7 @@ function statusRefusal(status: string, { statuses }: ClarifyVocabulary): string 
 /** The properties a clarification names for a task, before the task rules: a null takes a key out. */
 function taskChanges({
   properties,
-  clarification: { status, waitingOn, defer, due, contexts, priority },
+  clarification: { status, waitingOn, defer, due, contexts, priority, keepsDueTime },
   notePaths,
   vocabulary,
 }: {
@@ -109,7 +116,9 @@ function taskChanges({
   ] as const) {
     if (day === undefined) continue;
     if (day !== null && !isDay(day)) return { refused: `“${day}” is not a day (YYYY-MM-DD).` };
-    changes[key] = day;
+    // An Inbox row's new day keeps the due's time (#928); a caller's day is that day alone.
+    const kept = key === TASK_KEYS.due && keepsDueTime === true && day !== null;
+    changes[key] = kept ? dueOnDay(properties[key], day) : day;
   }
   // Who it waits on is written only on a task that is, or is being made, Waiting: a
   // person picked and then a change of mind about Waiting leaves nobody behind. Taking

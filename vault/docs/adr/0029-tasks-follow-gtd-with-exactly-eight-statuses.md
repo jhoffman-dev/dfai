@@ -336,3 +336,101 @@ Slice 1 of the Todoist sync (#912). James: "Priority should be added."
 - **The API's shapes are not changed here.** The property routes write
   `priority` as given, as they did. Its typed answers (Today, the review,
   the Inbox) gain it with the API's slice of #912.
+
+## Addendum (#928, 2026-11-21; amended 2026-11-21 in review): a due may carry a time of day
+
+Slice 2 of the Todoist sync (#912). A task's `due` is a day, as before, or a
+day with a time of day, which the sync will later map to Todoist's due date
+and time. Nothing changes for a due that names only its day.
+
+- **Two written forms.** `due: 2026-12-04` (a day) and
+  `due: 2026-12-04T15:30` (a day and a time). Setting a time in the
+  properties panel writes `YYYY-MM-DDTHH:MM`; clearing it writes back
+  `YYYY-MM-DD`. A date-only due is never rewritten. A due in another form
+  is not normalised unless the person edits its time: a repeating task's
+  roll and an Inbox row's new day change the day and keep whatever
+  followed it as written (`T15:30`, ` 09:00:59`, `Z`, `T24:00`). Every
+  write goes through the existing byte-preserving property write.
+- **What is read as a time.** As the calendar reads a timeblock's `start`
+  (`readEventTime`): `T` or a space before `HH:MM`, seconds or a zone after
+  the minutes read as the same clock time. `T24:00` is indexed as a date but
+  is no clock time: it is read as its day (shown with no time, overdue when
+  the day ends) — on Today, the review, the Inbox, the assistant, the
+  properties panel, and a calendar of tasks by `due`, which places its notes
+  through the same reader (`dueEventTime`) and shows it all day. Other
+  calendars read their dates as written, as before (`T24:00` is not placed). Anything the index does not date (`next Friday`,
+  `2026-02-30`) is no due, as before; it is never an error.
+- **Time zone: the Mac's local wall-clock time, no zone in the file.** The
+  due rules measure against `Clock.localNow`, the Mac's zone, everywhere but
+  the morning brief. The morning brief judges overdue on the clock its rule
+  runs on, which for `meeting-briefs` is the plan zone (`keepsCalendarClock`),
+  so it and Today differ only when the plan zone and the Mac's zone differ. Timeblocks
+  are written on the _plan zone_ (ADR-0030's later addendum, ADR-0046): the
+  primary Google calendar's zone, else the Mac's. That zone is a setting
+  read from Google in the shell, not a clock port; the Today page, the API
+  and the assistant have no plan zone to hand, and threading one through
+  them is not a small change. So: at home, where the two zones are one, a
+  block at 15:30 and a due at 15:30 are one moment; away from home they
+  are not, and a due follows the Mac's clock (the calendar's now line does
+  too). A zone written in the file is **not converted**: a due written
+  `2026-12-04T15:30:00Z` by another tool is read as 15:30 on the Mac's
+  clock, which may be hours from 15:30 UTC. The Todoist sync must write
+  local wall-clock times with no zone.
+- **The index is unchanged.** `value_date` already holds the due as written
+  whenever it is a date (`property-value.ts`). Its first ten characters
+  are the day, which every query, filter and task row reads
+  (`substr(value_date, 1, 10)`). No column, no change of meaning, no
+  version bump. The time is read from that text by one parser
+  (`gtd/task-due.ts`).
+- **Order: the query language's sort key, everywhere.** Dues sort by the
+  text as dated with a space read as `T` (`replace(value_date, ' ', 'T')`,
+  `field-sql.ts`), compared as SQLite compares text. So within a day a
+  date-only due ("sometime that day") comes first, then timed ones by
+  time; two in one minute by what follows (`T09:00` before `T09:00:59`);
+  `T24:00` after `T23:59`. Today and the review compare the same key
+  (`TaskDue.order`), so a table sorted by Due and Today agree. The SQL
+  key is left as it was: it is pinned in the host's tests, and sorting
+  costs nothing new.
+- **Overdue.** A date-only due is overdue from the next day, as before. A
+  timed due is overdue once its minute has gone by: due at 15:30, it is due
+  today at 15:30 and overdue at 15:31. "Due today" is by its day. The day
+  and the time are both taken from `Clock.localNow`, read once. A clock
+  that does not tell the wall time reads every due by its day. Today and
+  the weekly review left open read again the minute after a due's time
+  passes.
+- **Repeating tasks** roll on to the same time of day: `2026-12-04T15:30`
+  weekly becomes `2026-12-11T15:30`. A date-only due rolls to a day.
+- **A new day for a timed due.** Picked in the properties panel, a table
+  cell or an Inbox row ("keeps 15:30" beside its field), it keeps the time.
+  Sent through the API (`POST /v1/inbox/clarify` with `due: "2026-12-05"`),
+  a day is that day alone: a caller gets no time it did not send.
+- **Shown** beside the day where a due shows: "Due today at 15:30" on
+  Today, the weekly review, an Inbox row, and the properties panel's date.
+  The panel offers a time field beside a task's due date when it holds a
+  day, with its own Clear, which leaves the date.
+- **The Inbox assist** fills a due only with a day written in the item's
+  own words, as before; it never fills a time. A due already written, with
+  or without a time, is held and never filled over. A copy of a task is
+  the same task only when both name the same day and the same time (or
+  none); copies that part by the time are asked about.
+- **The API's shapes are not changed here.** Today, the review, the Inbox
+  and the assistant still answer `due` as the day, and their `overdue`
+  follows the rule above; a due's time joins their typed answers with the
+  API's slice of #912. The property routes write and read `due` as given.
+
+**Who decides overdue, and which comes first.** One rule, `gtd/task-due.ts`
+(`isPastDue`, `compareDues`), everywhere it can be asked:
+
+| Surface                                                          | Overdue                                       | Order                    |
+| ---------------------------------------------------------------- | --------------------------------------------- | ------------------------ |
+| Today page (and `GET /v1/today`)                                 | the rule                                      | the rule                 |
+| Weekly review (and `GET /v1/review`)                             | the rule                                      | the rule                 |
+| Assistant open loops, brief, follow-ups (`/v1/assistant/*`, MCP) | the rule                                      | —                        |
+| Morning brief (reads the assistant's `overdue`)                  | the rule, on the rule's clock (the plan zone) | —                        |
+| Calendar agenda of tasks by `due`                                | the rule, for a due with no end               | the calendar's, by time  |
+| Calendar agenda of any other date                                | the calendar's: ended before today            | the calendar's           |
+| Task tables and saved views (query language)                     | by day (`due < @today`)                       | the same key as the rule |
+
+**Known gaps.** The query language compares dates by day, so a saved view's
+`due < @today` cannot match Today's Overdue for a timed due today whose time
+has passed: #932. Dues and timeblocks part zones away from home (above).

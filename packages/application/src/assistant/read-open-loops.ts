@@ -5,7 +5,7 @@ import {
   type TaskStatusWords,
   type VaultPath,
 } from '@dfai/domain';
-import type { Clock } from '../ports.ts';
+import { wallTimeOn, type DueClock } from '../review/review-moment.ts';
 import { readLinkedPage } from '../linked-pages/read-linked-page.ts';
 import {
   citedEntity,
@@ -43,7 +43,7 @@ export async function readOpenLoops({
   path,
 }: {
   reads: AssistantReads;
-  clock: Pick<Clock, 'today'>;
+  clock: DueClock;
   path: VaultPath;
 }): Promise<AssistantOpenLoops> {
   const entity = await readAssistantEntity({ ...reads, path, tool: 'open-loops' });
@@ -70,6 +70,7 @@ export async function readOpenLoops({
     sourcePaths: rowPaths(sections, ['tasks', 'waiting']),
     followUps: followUps.value,
     day: date,
+    time: wallTimeOn(clock, date),
   });
   const { value: context } = cited;
   const loops = openLoopsOf({

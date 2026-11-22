@@ -239,6 +239,18 @@ describe('inboxItem — a task (#112)', () => {
     expect(item.arrivedIn).toBe('');
   });
 
+  it('carries the time its due names, and none for a date-only due (#928)', () => {
+    const timeOf = (due: unknown, dueWritten: unknown) =>
+      inboxItem({ path: path('Inbox/Call.md'), title: 'Call', type: 'task', due, dueWritten }).task
+        ?.dueTime;
+    expect(timeOf('2026-12-04', '2026-12-04T15:30')).toBe('15:30');
+    // The first item the index dates, as `due` is read.
+    expect(timeOf('2026-12-04', `soon\u001f2026-12-04 09:05\u001f2026-12-05T10:00`)).toBe('09:05');
+    expect(timeOf('2026-12-04', '2026-12-04')).toBeUndefined();
+    expect(timeOf(null, 'next Friday')).toBeUndefined();
+    expect(timeOf(null, null)).toBeUndefined();
+  });
+
   it('reads a priority that is not one of the four, or missing, as none (#913)', () => {
     const held = (priority: unknown) =>
       inboxItem({ path: path('Inbox/Call.md'), title: 'Call', type: 'task', priority }).task

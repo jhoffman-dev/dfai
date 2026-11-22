@@ -104,3 +104,21 @@ describe('the agenda', () => {
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });
+
+describe('the agenda of tasks by their due (#928)', () => {
+  it('puts a task due at 09:00 in Overdue by 09:01, as Today does', () => {
+    render(<CalendarView {...props} ticks={ticks()} taskDues now={9 * 60 + 1} />);
+    expect(rowTitles(screen.getByRole('region', { name: 'Overdue' }))).toEqual([
+      'Late report',
+      'Standup',
+    ]);
+  });
+
+  it('leaves it under today at 09:00, and in any calendar not of task dues', () => {
+    const { unmount } = render(<CalendarView {...props} ticks={ticks()} taskDues now={9 * 60} />);
+    expect(rowTitles(screen.getByRole('region', { name: 'Overdue' }))).toEqual(['Late report']);
+    unmount();
+    render(<CalendarView {...props} ticks={ticks()} now={12 * 60} />);
+    expect(rowTitles(screen.getByRole('region', { name: 'Overdue' }))).toEqual(['Late report']);
+  });
+});

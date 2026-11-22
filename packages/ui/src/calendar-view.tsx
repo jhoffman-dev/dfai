@@ -1,6 +1,8 @@
 import { useMemo, useRef } from 'react';
 import {
   calendarEvents,
+  clockLabel,
+  dueEventTime,
   movedEvent,
   rangeDays,
   resizedEnd,
@@ -101,6 +103,7 @@ export function CalendarView({
   onReschedule,
   onCreate,
   planner = null,
+  taskDues = false,
 }: {
   rows: readonly BoardRow[];
   dateKey: string;
@@ -121,11 +124,19 @@ export function CalendarView({
   onCreate?: (args: { value: string; name: string }) => void;
   /** The tray of tasks to plan into a calendar of blocks; null for any other calendar. */
   planner?: Planner | null;
+  /** Whether its notes are tasks by their due (`readsTaskDue`), whose Overdue Today's rule says. */
+  taskDues?: boolean;
 }) {
   const holdingRef = useRef(false);
   const { events, unscheduled } = useMemo(
-    () => calendarEvents({ rows, dateKey, endKey }),
-    [rows, dateKey, endKey],
+    () =>
+      calendarEvents({
+        rows,
+        dateKey,
+        endKey,
+        ...(taskDues && { readStart: dueEventTime }),
+      }),
+    [rows, dateKey, endKey, taskDues],
   );
   const gestures = useGestures({ dateKey, endKey, onOpenNote, onReschedule, onCreate, holdingRef });
   const chips = useMemo(() => fields.filter((key) => key !== dateKey), [fields, dateKey]);
@@ -156,6 +167,7 @@ export function CalendarView({
           kinds={kinds}
           ticks={ticks}
           onOpenNote={onOpenNote}
+          {...(taskDues && { dues: { time: now === null ? null : clockLabel(now) } })}
         />
       )}
       {range !== 'month' && range !== 'agenda' && (

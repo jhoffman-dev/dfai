@@ -1,3 +1,4 @@
+import { dueOf, isPastDue } from '../gtd/task-due.ts';
 import { TASK_KEYS, WAITING_STATUS } from '../gtd/gtd-status.ts';
 import { daysWaited } from '../linked-pages/linked-rows.ts';
 import type { LinkedSectionId } from '../linked-pages/linked-sections.ts';
@@ -66,6 +67,12 @@ export interface ItemContext extends Linking {
   readonly hasBlock: (block: BlockRef) => boolean;
   /** The day asked about, `YYYY-MM-DD`: what is overdue, and how long a waiting-for has waited. */
   readonly day: string;
+  /**
+   * The wall-clock time asked at, `HH:MM`, when the day asked about is the
+   * clock's today (#928): what a timed due that day has passed by. Null for
+   * another day, or a clock that does not tell it: dues are then read by day.
+   */
+  readonly time: string | null;
 }
 
 const DATE_KEY = 'date';
@@ -134,17 +141,25 @@ export function loopTask({
   waiting?: boolean;
 }): LoopTask {
   const status = textOf(row.values[words.key]) ?? (waiting ? WAITING_STATUS : null);
-  const due = dayOf(row.values[TASK_KEYS.due]);
+  // The day of its due as every surface reads one (#928): `2026-12-04T23:60` is no due.
+  const due = dueOf(row.values[TASK_KEYS.due])?.day ?? null;
   const waits = status === WAITING_STATUS;
+  const open = words.done === null || status !== words.done;
   return {
     ...citedNote(row, context),
     status,
     due,
-    overdue: due !== null && due < context.day && (words.done === null || status !== words.done),
+    overdue: due !== null && pastDue(row.values[TASK_KEYS.due], context) && open,
     waitingOn: waits ? textOf(row.values[TASK_KEYS.waitingOn]) : null,
     waitingDays: waits ? daysWaited(row.values[MODIFIED_KEY], context.day) : null,
     source: sourceOf(row.path, context),
   };
+}
+
+/** Whether a due has passed on the day and at the time asked, by the one due rule (#928). */
+function pastDue(value: unknown, context: ItemContext): boolean {
+  const due = dueOf(value);
+  return due !== null && isPastDue(due, { today: context.day, time: context.time });
 }
 
 /** How a follow-up was reached: it names the page itself, or only a meeting of it. */
@@ -156,7 +171,7 @@ export interface FollowUpTask extends LoopTask {
 
 /** A follow-up the index found from a page or its meetings, as an item. */
 export function followUpTask(row: FollowUpRow, context: ItemContext): FollowUpTask {
-  const due = dayOf(row.due);
+  const due = dueOf(row.due)?.day ?? null;
   const waits = row.status === WAITING_STATUS;
   const meeting =
     row.meeting === null || row.direct
@@ -166,7 +181,7 @@ export function followUpTask(row: FollowUpRow, context: ItemContext): FollowUpTa
     ...citedNote(row, context),
     status: row.status,
     due,
-    overdue: due !== null && due < context.day,
+    overdue: due !== null && pastDue(row.due, context),
     waitingOn: waits ? textOf(row.waitingOn) : null,
     waitingDays: waits ? daysWaited(row.modified, context.day) : null,
     source: sourceCitation(row.source, context.resolve, context.hasBlock),

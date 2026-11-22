@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  dueOf,
   humanizeKey,
   isTaskNote,
   notePropertyKind,
@@ -98,10 +99,8 @@ export function useNoteProperties({
     [types, typeName],
   );
   // A task in a vault that ranks its tasks 1 to 4 picks its `priority` as None or P1 to P4 (#913).
-  const ranked = useMemo(
-    () => typeName !== null && isTaskNote({ type: typeName }) && ranksKnownTasks(types),
-    [types, typeName],
-  );
+  const isTask = typeName !== null && isTaskNote({ type: typeName });
+  const ranked = useMemo(() => isTask && ranksKnownTasks(types), [types, isTask]);
 
   /** Kinds given to properties added to this note alone, for the note they were added to. */
   const [added, setAdded] = useState<{
@@ -142,13 +141,19 @@ export function useNoteProperties({
       if (ranked && def.key === TASK_KEYS.priority) {
         return { def, editor: 'priority' as const, value, error: null };
       }
+      // A task's due is read as every surface reads it (#928), and one that holds a
+      // day takes an optional time; one with none — empty, `next Friday` — would write nothing.
+      const isDue = isTask && def.key === TASK_KEYS.due && def.kind === 'date';
+      const due = isDue ? dueOf(value) : undefined;
       return {
         def,
         value,
         error: validatePropertyValue({ def, value }) ?? linkProblems[def.key] ?? null,
+        ...(due !== undefined && { due }),
+        ...(due !== undefined && due !== null && { editor: 'dueTime' as const }),
       };
     });
-  }, [note, isView, type, properties, addedKinds, linkProblems, ranked]);
+  }, [note, isView, type, properties, addedKinds, linkProblems, ranked, isTask]);
 
   const [relationChoices, setRelationChoices] = useState<
     Readonly<Record<string, readonly RelationChoice[]>>

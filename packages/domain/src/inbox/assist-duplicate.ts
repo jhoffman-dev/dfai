@@ -20,6 +20,7 @@
  * before anything is lost: it only ever errs toward naming more.
  */
 
+import { dueOf } from '../gtd/task-due.ts';
 import type { PossibleDuplicateTask, TaskCandidate } from '../gtd/task-similarity.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import type { AssistItemAnswer } from './assist-answer.ts';
@@ -103,11 +104,25 @@ function filedAlike({ held, filing }: AssistCopyFacts, task: TaskCandidate): boo
   return filing === task.project;
 }
 
-/** Whether the item is due on the task's day, where both have one; a due date written but unread on either never is. */
+/**
+ * Whether the item is due when the task is, where both have one: the same
+ * day, and the same time of day or none on both (#928). A due date written
+ * but unread on either never is.
+ */
 function dueAlike({ held, answer }: AssistCopyFacts, task: TaskCandidate): boolean {
   if (task.dueUnread || (held.due !== null && held.due.resolved === null)) return false;
   const mine = held.due?.resolved ?? answer.due;
-  return task.due === null || mine === null || mine === task.due;
+  if (task.due === null || mine === null) return true;
+  return mine === task.due && (held.due === null || !dueDiffers(held.due.written, task));
+}
+
+/**
+ * Whether a due written on the item names another day or time of day than
+ * the task's (#928); false where nothing written on it reads as a due.
+ */
+function dueDiffers(written: readonly string[], task: TaskCandidate): boolean {
+  const mine = dueOf(written);
+  return mine !== null && (mine.day !== task.due || mine.time !== (task.dueTime ?? null));
 }
 
 /** A task that neither repeats nor waits for later: someday, longterm and deferred tasks are questions. */
@@ -170,7 +185,12 @@ function newerHolds(facts: AssistCopyFacts, task: TaskCandidate): string[] {
     if (key === 'project') return false;
     const theirs = taskHolds(task, key);
     const mine = facts.written?.get(key) ?? [];
-    return theirs === undefined || theirs.length === 0 || bothDiffer(mine, theirs);
+    if (theirs === undefined || theirs.length === 0) return true;
+    // A due is the same when it names the same day and time, however it is written (#928).
+    if (key === 'due') {
+      return mine.length > 0 && (dueOf(mine) === null || dueDiffers(mine, task));
+    }
+    return bothDiffer(mine, theirs);
   });
   return facts.hasBody ? [...holds, 'body'] : holds;
 }

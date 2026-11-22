@@ -81,14 +81,21 @@ export function calendarEvents({
   rows,
   dateKey,
   endKey,
+  readStart = readEventTime,
 }: {
   rows: readonly BoardRow[];
   dateKey: string;
   endKey: string | null;
+  /**
+   * How each note's start is read: as written (`readEventTime`), or, in a
+   * calendar of tasks by their due, as the due rules read a due (#928,
+   * `dueEventTime`), so it is on the day every other surface puts it.
+   */
+  readStart?: (value: unknown) => EventTime | null;
 }): { events: CalendarEvent[]; unscheduled: number } {
   const events: CalendarEvent[] = [];
   for (const row of rows) {
-    const start = readEventTime(row.values[dateKey]);
+    const start = readStart(row.values[dateKey]);
     if (start === null) continue;
     const end = endKey === null ? null : readEventTime(row.values[endKey]);
     const ordered = end !== null && minutesBetween(start, end) >= 0 ? end : null;

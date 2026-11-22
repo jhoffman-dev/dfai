@@ -22,6 +22,13 @@ export const firstDaySql = (key: string, column: string) =>
   `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
 
 /**
+ * A date property's first dated value as the index holds it — its day, and
+ * its time when one is written (#928); null when it holds no date.
+ */
+export const firstDatedSql = (key: string, column: string) =>
+  `(SELECT p.value_date FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
+
+/**
  * 1 when a property holds something other than one day — words, a number, a
  * list of several — as `focusIsOwn` reads the file; 0 for none, a blank, or one day.
  */

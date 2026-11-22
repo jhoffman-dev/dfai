@@ -5,7 +5,7 @@ import {
   type ReviewTask,
   type TodayLists,
 } from '@dfai/domain';
-import type { Clock } from '../ports.ts';
+import { reviewMomentOf, type ReviewClock } from '../review/review-moment.ts';
 import {
   readReviewSources,
   type InboxCount,
@@ -18,6 +18,11 @@ import { loadObjectTypes } from '../types/load-types.ts';
 export interface TodayReport extends TodayLists {
   /** The day it was taken, `YYYY-MM-DD`, from the injected clock. */
   readonly today: string;
+  /**
+   * The wall-clock time it was taken at, `HH:MM` (#928): what a timed due
+   * today had passed by. Null or absent when the clock gave none.
+   */
+  readonly time?: string | null;
   /**
    * Whether tasks can be chosen for today (#108): the vault's Task type has
    * `focus` as a date. When not, nothing is chosen or carried over, and the
@@ -43,7 +48,7 @@ export async function readToday({
   ...reads
 }: ReviewReadPorts &
   InboxRule & {
-    clock: Pick<Clock, 'today' | 'now'>;
+    clock: ReviewClock;
     choosing?: boolean;
     /** Whether the vault's tasks are ranked 1 to 4 (`ranksTasks`, #913); read when not said. */
     ranksTasks?: boolean;
@@ -57,12 +62,13 @@ export async function readToday({
     choosing ?? types?.then(choosesForToday) ?? false,
     ranked ?? types?.then(ranksTasks) ?? false,
   ]);
-  const at = { today: clock.today(), now: clock.now() };
+  const at = reviewMomentOf(clock);
   // A vault that keeps a priority of its own is shown none of this feature's (#913).
   const listed = ranking ? tasks : tasks.map(withoutPriority);
   return {
     ...todayLists({ tasks: listed, projects, at, choosing: chooses }),
     today: at.today,
+    time: at.time ?? null,
     choosing: chooses,
     inbox,
     truncated,
