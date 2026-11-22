@@ -100,3 +100,36 @@ describe('indexablePropertiesOf', () => {
     expect(indexablePropertiesOf({})).toEqual([]);
   });
 });
+
+describe('the rows a list is read from (#923)', () => {
+  // `type-view.ts` reads a list of text's items as its rows of non-blank text;
+  // main read its held rows, COALESCE(text, json, '') <> ''. The two pick the
+  // same items whatever a row holds, and this writer adds a rule on top that
+  // the index's own tests lean on: a row with json has no text, and text is
+  // trimmed. A writer that broke it should fail here first.
+  const VALUES: unknown[] = [
+    'Mara Quill',
+    '  padded  ',
+    '',
+    ' ',
+    '2026-03-01',
+    ' 7 ',
+    7,
+    Number.NaN,
+    true,
+    null,
+    { name: 'Mara Quill' },
+    [['a', 'b'], { name: 'c' }, ''],
+    new Date(Date.UTC(2026, 2, 1)),
+  ];
+
+  it.each(VALUES.map((value) => [JSON.stringify(value) ?? String(value), value]))(
+    '%s: no text beside json, and text trimmed',
+    (_, value) => {
+      for (const row of toIndexableProperties('people', value)) {
+        if (row.json !== null) expect(row.text).toBeNull();
+        if (row.text !== null) expect(row.text).toBe(row.text.trim());
+      }
+    },
+  );
+});

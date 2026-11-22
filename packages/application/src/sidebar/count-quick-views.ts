@@ -12,6 +12,7 @@ import {
 import type { IndexPort } from '../index/ports.ts';
 import type { MarkdownPort } from '../notes/ports.ts';
 import { runAtlasQuery } from '../query/run-atlas-query.ts';
+import { viewColumnsOf } from '../query/run-view.ts';
 import type { VaultFsPort } from '../vault/ports.ts';
 
 /**
@@ -64,7 +65,7 @@ export async function countQuickViews({
       const saved = parseSavedView(properties);
       const queryText = parseQueryView(properties);
       try {
-        if (saved !== null) return [id, await countView(index, saved)] as const;
+        if (saved !== null) return [id, await countView({ index, query: saved, types })] as const;
         if (queryText === null) return null;
         const answer = await runAtlasQuery({ index, text: queryText, types, notePaths });
         return [id, answer.result.rows.length] as const;
@@ -78,10 +79,20 @@ export async function countQuickViews({
   return new Map(counted.filter((pair) => pair !== null));
 }
 
-async function countView(index: IndexPort, query: ViewQuery): Promise<number> {
-  const { sql, parameters } = compileViewQuery(query, {
-    aggregate: { kind: 'count', column: null },
-  });
+async function countView({
+  index,
+  query,
+  types,
+}: {
+  index: IndexPort;
+  query: ViewQuery;
+  types: readonly ObjectType[];
+}): Promise<number> {
+  const { sql, parameters } = compileViewQuery(
+    query,
+    { aggregate: { kind: 'count', column: null } },
+    { viewColumns: viewColumnsOf(types, query.type) },
+  );
   const result = await index.query(sql, parameters);
   const counted = Number(result.rows[0]?.[0] ?? 0);
   return Math.min(counted, queryRowLimit(query.limit));

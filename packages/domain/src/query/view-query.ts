@@ -17,6 +17,13 @@ import { foldedLinkName } from '../markdown/resolve-wikilink.ts';
 import { linkTargets } from '../index/relation-rows.ts';
 import { TAGS_KEY } from '../tags/note-tags.ts';
 import { isWikiLink } from '../types/property-value.ts';
+import type { TypeViewColumn } from '../query-language/type-view.ts';
+import {
+  listColumnOf,
+  listCondition,
+  viewJoinsItemsSql,
+  type ListFilterSite,
+} from './list-filter.ts';
 
 export { InvalidQueryError };
 
@@ -166,6 +173,13 @@ export interface QueryReach {
    * Without it a link is compared as the text it is.
    */
   readonly resolveLink?: ((target: string) => string | null) | undefined;
+  /**
+   * The columns the type's view is made of (`typeViewColumns`), so a filter
+   * on a list of text asks the index for the notes whose items match rather
+   * than joining every note's list to look (#923). Without them every filter
+   * compares the cell. They must be the ones the index made the view from.
+   */
+  readonly viewColumns?: readonly TypeViewColumn[] | undefined;
 }
 
 export function compileViewQuery(
@@ -181,7 +195,9 @@ export function compileViewQuery(
   const conditions = [
     OUTSIDE_ATLAS,
     ...(reach.includeArchived === true ? [] : archivedLeftOut(query.type, table)),
-    ...query.filters.map((filter) => condition(filter, parameters, reach)),
+    ...query.filters.map((filter) =>
+      condition(filter, { parameters, reach, table, view: viewNameFor(query.type) }),
+    ),
   ];
 
   const order = ordering(query, shape);
@@ -318,7 +334,61 @@ function ordering(query: ViewQuery, shape: QueryShape): string[] {
   ];
 }
 
-function condition(
+/** Where a filter is compiled: the view it narrows, and what it binds into. */
+interface FilterSite extends ListFilterSite {
+  readonly parameters: (string | number)[];
+  readonly reach: QueryReach;
+}
+
+/**
+ * A filter on a list of text is asked of the note's items when the view the
+ * index holds joins that list from its items, and of its cell when it does
+ * not (`viewJoinsItemsSql`); any other filter, of its cell.
+ */
+function condition(filter: QueryFilter, site: FilterSite): string {
+  const cellParameters: (string | number)[] = [];
+  const cell = cellCondition(filter, cellParameters, site.reach);
+  const column = listColumnOf(filter.key, site.reach.viewColumns);
+  const itemParameters: (string | number)[] = [];
+  const items = column === null ? null : itemCondition(filter, column, site, itemParameters);
+  if (column === null || items === null) {
+    site.parameters.push(...cellParameters);
+    return cell;
+  }
+  site.parameters.push(...itemParameters, ...cellParameters);
+  return `CASE WHEN ${viewJoinsItemsSql(column, site)} THEN ${items} ELSE ${cell} END`;
+}
+
+/**
+ * A filter on a list of text, as a lookup of the note's matching items
+ * (`listCondition`); null to compare the cell instead — the list's cell
+ * when no lookup keeps the same notes, and a filter by a link by the note
+ * it opens, which is a lookup already.
+ */
+function itemCondition(
+  filter: QueryFilter,
+  column: TypeViewColumn,
+  site: FilterSite,
+  parameters: (string | number)[],
+): string | null {
+  const { operator, value } = filter;
+  if (WITHOUT_VALUE.includes(operator)) {
+    return listCondition({ operator, column, value: undefined }, site, parameters);
+  }
+  if (typeof value !== 'string' || relativeDateSql(value) !== null) return null;
+  if (comparesExactly(filter) && site.reach.resolveLink !== undefined && isWikiLink(value)) {
+    return null;
+  }
+  const tag = comparesExactly(filter) && filter.key === TAGS_KEY;
+  return listCondition(
+    { operator, column, value: tag ? tagText(value) : value, ignoreCase: tag },
+    site,
+    parameters,
+  );
+}
+
+/** A filter as a comparison of the view's cell. */
+function cellCondition(
   filter: QueryFilter,
   parameters: (string | number)[],
   { resolveLink }: QueryReach,
@@ -408,7 +478,10 @@ function tagCondition(
   tag: string,
   parameters: (string | number)[],
 ): string {
-  parameters.push(tag.trim().replace(/^#/, ''));
+  parameters.push(tagText(tag));
   const negated = filter.operator === 'isNot' ? ' NOT' : '';
   return `${column} IS${negated} ? COLLATE NOCASE`;
 }
+
+/** A tag as it is compared: neither a leading `#` nor the space around it counts. */
+const tagText = (tag: string): string => tag.trim().replace(/^#/, '');

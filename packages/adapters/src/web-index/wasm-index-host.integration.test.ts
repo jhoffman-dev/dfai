@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { IndexedNote } from '@dfai/application';
+import { viewColumnsOf, viewSpecsFor, type IndexedNote } from '@dfai/application';
+import { compileViewQuery, parseObjectType } from '@dfai/domain';
 import { sqliteWasm } from './in-memory-web-index.ts';
 import { memoryIndexFiles, type MemoryIndexFiles } from './memory-index-files.ts';
 import { MAX_QUERY_ROWS } from './wasm-index-query.ts';
@@ -315,5 +316,58 @@ describe('the index host, opening a file it cannot read (#666)', () => {
     });
     expect(again.open(VAULT)).toEqual({ fresh: true });
     expect(discarded.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the index host, a filter on a list (#923)', () => {
+  beforeEach(() => void host.open(VAULT));
+
+  const meetingOf = (attendees: object | string) =>
+    parseObjectType({ name: 'meeting', properties: { attendees } });
+  const LISTED = meetingOf({ kind: 'text', many: true });
+  const text = (index: number, value: string) => ({
+    key: 'attendees',
+    index,
+    text: value,
+    number: null,
+    date: null,
+    json: null,
+  });
+  const typed = { key: 'type', index: 0, text: 'meeting', number: null, date: null, json: null };
+
+  /** The paths a table filtered by `attendees contains mara` lists, compiled as the app does. */
+  const listed = () => {
+    const { sql, parameters } = compileViewQuery(
+      {
+        type: 'meeting',
+        columns: ['attendees'],
+        filters: [{ key: 'attendees', operator: 'contains', value: 'mara' }],
+        sorts: [],
+        limit: 10,
+      },
+      {},
+      { viewColumns: viewColumnsOf([LISTED], 'meeting') },
+    );
+    return host.query(sql, parameters).rows.map((row) => row[0]);
+  };
+
+  beforeEach(() => {
+    host.put(VAULT, [
+      note('Two.md', {
+        properties: [typed, text(0, 'mara@example.com'), text(1, 'iris@example.com')],
+      }),
+      note('One.md', { properties: [typed, text(0, 'mara@example.com')] }),
+    ]);
+  });
+
+  it('asks the items, through the query guard, of a view made with the list', () => {
+    host.rebuildViews(viewSpecsFor([LISTED]));
+    expect(listed()).toEqual(['One.md', 'Two.md']);
+  });
+
+  it('asks the cell while the view the index holds is the one from before the list', () => {
+    host.rebuildViews(viewSpecsFor([meetingOf('text')]));
+    // Two attendees make no one value in a text cell, so only One is shown matching.
+    expect(listed()).toEqual(['One.md']);
   });
 });
