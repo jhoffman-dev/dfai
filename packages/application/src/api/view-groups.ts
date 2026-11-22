@@ -56,14 +56,14 @@ export async function runSavedView(
   const type = await viewTypeOf(request, asSaved.type);
   const query = withChecklistProgress(asSaved, type);
   if (!drawsGroups(display.layout) || display.groupBy === null) {
-    return runViewQuery(request, query, { includeArchived });
+    return runViewQuery(request, query, { includeArchived, type });
   }
   const { names, related } = await relationGroups(request, { display, type });
   const levels = drawnLevels({ display, type, sorts: query.sorts, related });
-  if (levels.length === 0) return runViewQuery(request, query, { includeArchived });
+  if (levels.length === 0) return runViewQuery(request, query, { includeArchived, type });
 
   const run = groupedRun({ query, display, type });
-  const answer = await runViewQuery(request, run.query, { includeArchived });
+  const answer = await runViewQuery(request, run.query, { includeArchived, type });
   const rows = toBoardRows(answer);
   const places = new Map(rows.map((row, place) => [row, place]));
   const groups = groupResultRows({
@@ -89,6 +89,7 @@ export async function boardGroupsOf(
   if (levels.length === 0) return { levels, columns: [], lanes: [] };
   const answer = await runViewQuery(request, groupedRun({ query, display, type }).query, {
     includeArchived: false,
+    type,
   });
   const board = boardGroups({ rows: toBoardRows(answer), levels, names });
   return { levels, columns: board.columns, lanes: board.lanes.map((lane) => lane.group) };

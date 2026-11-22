@@ -1561,10 +1561,13 @@ export async function installHost(
             return declared?.text ?? note.title;
           }
           // A property holding several values is one cell, joined as the real
-          // view's group_concat joins it.
+          // view's group_concat joins it: a list of text from its items (#923),
+          // a list of numbers or dates from its held rows.
           const items = (note.properties ?? []).filter((item) => item.key === column);
+          const select = views.get(type)?.select ?? '';
           const many =
-            views.get(type)?.select.includes(`group_concat(CASE WHEN p.key = '${column}'`) ?? false;
+            select.includes(`group_concat(CASE WHEN p.key = '${column}'`) ||
+            select.includes(`p.key = '${column}' AND p.value_text <> '')`);
           if (many && items.length > 0) return items.map((item) => item.text).join(', ');
           return items[0]?.text ?? null;
         };
