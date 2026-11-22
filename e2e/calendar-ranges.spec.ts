@@ -31,7 +31,7 @@ const CALENDAR = [
 const task = (due: string, body: string) =>
   ['---', 'type: task', `due: ${due}`, '---', '', body, ''].join('\n');
 
-async function openCalendar(page: Page) {
+async function openCalendar(page: Page, extra: Readonly<Record<string, string>> = {}) {
   const vault = await createVault();
   await vault.mkdir('.atlas/types');
   await vault.mkdir('.atlas/views');
@@ -40,6 +40,7 @@ async function openCalendar(page: Page) {
   await vault.write('standup.md', task('2026-09-22T09:00', 'Every morning.'));
   await vault.write('errand.md', task('2026-09-22', 'Some time today.'));
   await vault.write('overdue.md', task('2026-09-18', 'Should have been done.'));
+  for (const [path, text] of Object.entries(extra)) await vault.write(path, text);
 
   await installHost(page, vault);
   await page.clock.setFixedTime(NOW);
@@ -131,6 +132,18 @@ test('dragging a note to another day and time in the week writes it, keeping its
     'ArrowRight',
   ]);
   await expectFile(vault, 'errand.md').toMatch(/due: 2026-09-23\n/);
+});
+
+test('a task due at 24:00 is on its day, and moves as a date-only due (#928)', async ({ page }) => {
+  const vault = await openCalendar(page, {
+    'closing.md': task('2026-09-22T24:00', 'At the end of the day.'),
+  });
+  await expect(
+    page.getByLabel('2026-09-22', { exact: true }).getByRole('button', { name: /closing/ }),
+  ).toBeVisible();
+  await dragWithKeyboard(page, page.getByRole('button', { name: /closing/ }), ['ArrowRight']);
+  // Rescheduled by the person, it is written as the day it was moved to.
+  await expectFile(vault, 'closing.md').toMatch(/due: 2026-09-23\n/);
 });
 
 test('the agenda shows what is overdue, then today', async ({ page }) => {
