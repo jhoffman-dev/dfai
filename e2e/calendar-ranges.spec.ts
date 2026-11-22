@@ -141,7 +141,9 @@ test('a task due at 24:00 is on its day, and moves as a date-only due (#928)', a
   await expect(
     page.getByLabel('2026-09-22', { exact: true }).getByRole('button', { name: /closing/ }),
   ).toBeVisible();
-  await dragWithKeyboard(page, page.getByRole('button', { name: /closing/ }), ['ArrowRight']);
+  await dragWithKeyboard(page, page.getByRole('button', { name: 'closing', exact: true }), [
+    'ArrowRight',
+  ]);
   // Rescheduled by the person, it is written as the day it was moved to.
   await expectFile(vault, 'closing.md').toMatch(/due: 2026-09-23\n/);
 });
