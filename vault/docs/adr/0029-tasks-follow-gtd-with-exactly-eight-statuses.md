@@ -355,7 +355,10 @@ and time. Nothing changes for a due that names only its day.
   (`readEventTime`): `T` or a space before `HH:MM`, seconds or a zone after
   the minutes read as the same clock time. `T24:00` is indexed as a date but
   is no clock time: it is read as its day (shown with no time, overdue when
-  the day ends). Anything the index does not date (`next Friday`,
+  the day ends) — on Today, the review, the Inbox, the assistant, the
+  properties panel, and a calendar of tasks by `due`, which places its notes
+  through the same reader (`dueEventTime`) and shows it all day. Other
+  calendars read their dates as written, as before (`T24:00` is not placed). Anything the index does not date (`next Friday`,
   `2026-02-30`) is no due, as before; it is never an error.
 - **Time zone: the Mac's local wall-clock time, no zone in the file.** The
   due rules measure against `Clock.localNow`, the Mac's zone, everywhere but
