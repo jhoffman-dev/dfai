@@ -1,4 +1,4 @@
-import { dueAt, dueOf, isOnePlainDue, isPastDue } from '../gtd/task-due.ts';
+import { isPastDue, judgedDue } from '../gtd/task-due.ts';
 import { TASK_KEYS, WAITING_STATUS } from '../gtd/gtd-status.ts';
 import { daysWaited } from '../linked-pages/linked-rows.ts';
 import type { LinkedSectionId } from '../linked-pages/linked-sections.ts';
@@ -155,25 +155,16 @@ export function loopTask({
   };
 }
 
-/**
- * A task's due day: one plain value as every surface reads one (#928) —
- * `2026-12-04T23:60` is no due — and any other, a list or a mapping, as
- * main read it: the day its text starts with (PR #930 audit).
- */
+/** A task's due day as Today judges it (`judgedDue`, #928): `2026-12-04T23:60` is no due. */
 function dueDayOf(value: unknown): string | null {
-  return isOnePlainDue(value) ? (dueOf(value)?.day ?? null) : dayOf(value);
+  return judgedDue(value)?.day ?? null;
 }
 
-/**
- * Whether a due has passed on the day and at the time asked, by the one due
- * rule (#928); a value that is not one plain due by its day alone, as main judged it.
- */
+/** Whether a due has passed on the day and at the time asked, by the one due rule (#928). */
 function pastDue(value: unknown, context: ItemContext): boolean {
-  const due = isOnePlainDue(value) ? dueOf(value) : dueDayAt(dayOf(value));
+  const due = judgedDue(value);
   return due !== null && isPastDue(due, { today: context.day, time: context.time });
 }
-
-const dueDayAt = (day: string | null) => (day === null ? null : dueAt(day, null));
 
 /** How a follow-up was reached: it names the page itself, or only a meeting of it. */
 export interface FollowUpTask extends LoopTask {

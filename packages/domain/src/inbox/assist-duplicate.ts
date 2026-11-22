@@ -20,7 +20,7 @@
  * before anything is lost: it only ever errs toward naming more.
  */
 
-import { dueOf } from '../gtd/task-due.ts';
+import { dueOf, holdsSeveralDues } from '../gtd/task-due.ts';
 import type { PossibleDuplicateTask, TaskCandidate } from '../gtd/task-similarity.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import type { AssistItemAnswer } from './assist-answer.ts';
@@ -119,11 +119,11 @@ function dueAlike({ held, answer }: AssistCopyFacts, task: TaskCandidate): boole
 }
 
 /**
- * Whether what is written under a due is not one plain value: several items,
- * or one holding several joined (`a, b`), which no single date ever does.
+ * Whether what is written under a due holds several entries (`holdsSeveralDues`):
+ * as items, or as the row's names joined `a, b`, which no one date ever is.
  */
 function heldMany(written: readonly string[]): boolean {
-  return written.length > 1 || written.some((item) => item.includes(','));
+  return holdsSeveralDues(written.flatMap((item) => item.split(', ')));
 }
 
 /**

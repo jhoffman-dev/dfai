@@ -45,10 +45,55 @@ export interface DueMoment {
   readonly time?: string | null;
 }
 
-/** The due a frontmatter value holds: its first item the index dates; null when none. */
+/**
+ * The items a due holds: each one written, a blank — empty, spaces, null —
+ * being no item, as the index counts them (`singleDatedSql`).
+ */
+function dueEntries(value: unknown): readonly unknown[] {
+  const items: readonly unknown[] = Array.isArray(value) ? value : [value];
+  return items.filter(
+    (item) =>
+      item !== null && item !== undefined && !(typeof item === 'string' && item.trim() === ''),
+  );
+}
+
+/**
+ * The one entry a due holds, as written (PR #930): what is left once blanks
+ * are dropped, when that is exactly one text — `2026-12-04T15:30`, or
+ * `[2026-12-04T15:30]`, or `['', 2026-12-04T15:30]`. Null for several, for
+ * none, and for a mapping, a number or `true`. The only place that decides
+ * whether a due is one value: every reader and every action asks it.
+ */
+export function oneDueEntry(value: unknown): string | null {
+  const entries = dueEntries(value);
+  const [only] = entries;
+  return entries.length === 1 && typeof only === 'string' ? only.trim() : null;
+}
+
+/** Whether a due holds several entries, blanks aside: never one due, with no time read. */
+export function holdsSeveralDues(value: unknown): boolean {
+  return dueEntries(value).length > 1;
+}
+
+/**
+ * The due a value holds, read with its time: its one entry (`oneDueEntry`),
+ * where the index dates it; null for anything else.
+ */
 export function dueOf(value: unknown): TaskDue | null {
-  const dated = datedDueOf(value);
+  const entry = oneDueEntry(value);
+  const dated = entry === null ? null : datedDueOf(entry);
   return dated === null ? null : dueOfDated(dated);
+}
+
+/**
+ * The due a value is judged by — Today, the review, the assistant: its one
+ * entry with its time (`dueOf`); a due of several entries by the first day
+ * the index dates among them, with no time, as before #928. Null for none.
+ */
+export function judgedDue(value: unknown): TaskDue | null {
+  if (oneDueEntry(value) !== null) return dueOf(value);
+  const dated = datedDueOf(value);
+  return dated === null ? null : dueAt(dated.slice(0, 10), null);
 }
 
 /** The first item of a value the index dates, as it dates it (`value_date`); null when none. */
@@ -73,9 +118,8 @@ export function dueOfDated(dated: string): TaskDue {
  * value that holds no due, which such a calendar counts as unscheduled.
  */
 export function dueEventTime(value: unknown): EventTime | null {
-  // One plain written value only, as main placed notes: a list is not on the
-  // calendar, where a move would write one value over all of them.
-  if (!isOnePlainDue(value)) return null;
+  // One entry only: a due of several is not on the calendar, where a move
+  // would write one value over all of them.
   const due = dueOf(value);
   if (due === null) return null;
   if (due.time === null) return { date: due.day, minutes: null };
@@ -136,9 +180,9 @@ export function dueWithTime(value: unknown, time: string | null): string | null 
  * rewrites it. A value that is no single written date becomes the day.
  */
 export function dueOnDay(value: unknown, day: string): string {
-  if (typeof value !== 'string' || dueOf(value) === null) return day;
-  const written = value.trim();
-  return `${day}${written.slice(10)}`;
+  const entry = oneDueEntry(value);
+  if (entry === null || dueOf(entry) === null) return day;
+  return `${day}${entry.slice(10)}`;
 }
 
 /**
@@ -159,23 +203,15 @@ export function dueRescheduled(value: unknown, day: string): string {
  * written `YYYY-MM-DD`. Its end, where the view has one, moves with it.
  */
 export function movedDue(move: {
-  start: string;
+  start: unknown;
   end: string | null;
   days: number;
   minutes: number;
-}): EventWrite {
-  const due = dueOf(move.start);
-  if (due === null) return { start: move.start, end: null };
-  return movedEvent({ ...move, start: due.time === null ? due.day : move.start });
-}
-
-/**
- * Whether a task's due is one plain written value — not a list, a mapping, a
- * number or a blank — which an action that changes or judges a due may read
- * by the due rules. Any other value is left to what main did with it.
- */
-export function isOnePlainDue(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== '';
+}): EventWrite | null {
+  const entry = oneDueEntry(move.start);
+  const due = entry === null ? null : dueOf(entry);
+  if (entry === null || due === null) return null;
+  return movedEvent({ ...move, start: due.time === null ? due.day : entry });
 }
 
 /**

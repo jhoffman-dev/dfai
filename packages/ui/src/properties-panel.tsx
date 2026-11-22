@@ -291,10 +291,10 @@ function PropertyEditor({
             label={row.def.label}
             value={text}
             onChange={onChange}
-            {...(row.due !== undefined && { due: row.due })}
+            {...(row.due !== undefined && { due: row.due, written: row.value })}
           />
           {row.editor === 'dueTime' && (
-            <DueTimeEditor label={row.def.label} value={text} onChange={onChange} />
+            <DueTimeEditor label={row.def.label} value={row.value} onChange={onChange} />
           )}
         </>
       );
@@ -594,7 +594,8 @@ function DueTimeEditor({
   onChange,
 }: {
   label: string;
-  value: string;
+  /** The due as written: one entry, a list of one included (`oneDueEntry`). */
+  value: unknown;
   onChange: (value: unknown) => void;
 }) {
   const held = dueOf(value)?.time ?? '';
@@ -664,6 +665,7 @@ function DateEditor({
   value,
   onChange,
   due,
+  written,
 }: {
   id: string;
   label: string;
@@ -671,8 +673,10 @@ function DateEditor({
   onChange: (value: unknown) => void;
   /** A task's due as read (`PropertyRow.due`): shown as the other surfaces show it. */
   due?: TaskDue | null;
+  /** A task's due as written, which a new day is worked out from: a list of one too. */
+  written?: unknown;
 }) {
-  const day = value.slice(0, 10);
+  const day = due?.day ?? value.slice(0, 10);
   const [draft, setDraft] = useState(day);
   const [shownDay, setShownDay] = useState(day);
   // A new value from the file replaces whatever was half-typed.
@@ -685,7 +689,7 @@ function DateEditor({
   const commit = () => {
     if (draft === '' || draft === day) setDraft(day);
     // A task's due moves as the due rules move it (#928); any other date keeps what followed its day.
-    else onChange(due === undefined ? withDatePart(value, draft) : dueRescheduled(value, draft));
+    else onChange(due === undefined ? withDatePart(value, draft) : dueRescheduled(written, draft));
   };
 
   return (

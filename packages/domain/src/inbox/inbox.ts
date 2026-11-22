@@ -457,10 +457,7 @@ export function inboxItem(row: {
  * to keep no time of theirs (PR #930 audit).
  */
 function dueTimeOfWritten(written: unknown): string | null {
-  if (typeof written !== 'string') return null;
-  // A blank item is no item, as the index counts them.
-  const items = written.split('\u001f').filter((item) => item.trim() !== '');
-  return items.length === 1 ? (dueOf(items[0])?.time ?? null) : null;
+  return typeof written === 'string' ? (dueOf(written.split('\u001f'))?.time ?? null) : null;
 }
 
 function inboxTask(row: {

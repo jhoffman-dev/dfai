@@ -5,7 +5,7 @@
  */
 
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
-import { dueOf } from '../gtd/task-due.ts';
+import { dueOf, holdsSeveralDues } from '../gtd/task-due.ts';
 import { firstDaySql, singleTextSql } from '../gtd/task-row.ts';
 import type { TaskCandidate } from '../gtd/task-similarity.ts';
 import { MEETING_PEOPLE_KEY } from '../meeting-links/meeting-link-keys.ts';
@@ -59,10 +59,8 @@ export function assistTaskCandidate(row: Readonly<Record<string, unknown>>): Tas
   const day = (value: unknown) => (typeof value === 'string' && value !== '' ? value : null);
   const due = day(row['due']);
   const defer = day(row['defer']);
-  const dueItems = written(row['dueWritten'])
-    .split('\u001f')
-    .filter((item) => item.trim() !== '');
-  const dueTime = dueItems.length === 1 ? (dueOf(dueItems[0])?.time ?? null) : null;
+  const dueItems = written(row['dueWritten']).split('\u001f');
+  const dueTime = dueOf(dueItems)?.time ?? null;
   return {
     path: createVaultPath(String(row['path'])),
     title: String(row['title'] ?? ''),
@@ -70,7 +68,7 @@ export function assistTaskCandidate(row: Readonly<Record<string, unknown>>): Tas
     status: gtdStatusOf(row['status']),
     due,
     ...(dueTime !== null && { dueTime }),
-    ...(dueItems.length > 1 && { dueMany: true }),
+    ...(holdsSeveralDues(dueItems) && { dueMany: true }),
     dueUnread: due === null && written(row['dueWritten']) !== '',
     // A defer written but not a day is still deferred: read as some day, never as none.
     defer: defer ?? (written(row['deferWritten']) === '' ? null : written(row['deferWritten'])),

@@ -56,20 +56,26 @@ function useGestures({
       start: text(event.values[dateKey]) ?? '',
       end: endKey === null ? null : text(event.values[endKey]),
     });
-    const move = taskDues ? movedDue : movedEvent;
-    const moved = (event: CalendarEvent, by: ClockGesture) => move({ ...valuesOf(event), ...by });
+    // A task calendar moves the due as the due rules read it, from the value as written (a list of one too).
+    const moved = (event: CalendarEvent, by: ClockGesture) =>
+      taskDues
+        ? movedDue({ ...valuesOf(event), start: event.values[dateKey], ...by })
+        : movedEvent({ ...valuesOf(event), ...by });
     const resized = (event: CalendarEvent, minutes: number) =>
       resizedEnd({ event, ...valuesOf(event), minutes });
     return {
       open: onOpenNote,
-      move: (event, by) => onReschedule({ path: event.path, ...moved(event, by) }),
+      move: (event, by) => {
+        const write = moved(event, by);
+        if (write !== null) onReschedule({ path: event.path, ...write });
+      },
       canResize: endKey !== null,
       resize: (event, minutes) => {
         const end = resized(event, minutes);
         if (end !== null) onReschedule({ path: event.path, start: valuesOf(event).start, end });
       },
       landing: (event, { resizing, ...by }) =>
-        resizing ? (resized(event, by.minutes) ?? '') : moved(event, by).start,
+        resizing ? (resized(event, by.minutes) ?? '') : (moved(event, by)?.start ?? ''),
       canCreate: onCreate !== undefined,
       create: ({ date, minutes, name }) => onCreate?.({ value: slotValue(date, minutes), name }),
       onHold: (held) => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   dueOf,
   humanizeKey,
-  isOnePlainDue,
+  oneDueEntry,
   isTaskNote,
   notePropertyKind,
   relationTypes,
@@ -146,7 +146,7 @@ export function useNoteProperties({
       // day takes an optional time; one with none — empty, `next Friday` — would write nothing.
       // A list, a mapping or a blank is edited as main edited it: no time field (PR #930 audit).
       const isDue =
-        isTask && def.key === TASK_KEYS.due && def.kind === 'date' && isOnePlainDue(value);
+        isTask && def.key === TASK_KEYS.due && def.kind === 'date' && oneDueEntry(value) !== null;
       const due = isDue ? dueOf(value) : undefined;
       return {
         def,
