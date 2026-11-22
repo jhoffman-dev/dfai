@@ -388,8 +388,12 @@ and time. Nothing changes for a due that names only its day.
   edited in the properties panel as main edited it (no time field), written
   over by a new day on an Inbox row or through the API, rolled as main rolled
   it, and never the same as another task's due in the Inbox assist's
-  duplicate check (it asks, and the due is carried over). Only one entry
-  (`due: 2026-12-04T15:30`, or a list of one) is read with its time.
+  duplicate check (it asks, and the due is carried over). A due has **one entry** when, blanks dropped, exactly one text is left,
+  written alone or as a list (`2026-12-04T15:30`, `[2026-12-04T15:30]`,
+  `['', 2026-12-04T15:30]`); `oneDueEntry` in `task-due.ts` is the only place
+  that decides it. One entry is read and acted on exactly as written alone,
+  time included, on every surface, and an action writes it back as one value
+  (main also wrote a one-item list back as one value when its date changed).
 - **The index is unchanged.** `value_date` already holds the due as written
   whenever it is a date (`property-value.ts`). Its first ten characters
   are the day, which every query, filter and task row reads
