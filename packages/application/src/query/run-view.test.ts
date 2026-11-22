@@ -111,7 +111,7 @@ describe('runView', () => {
     });
     await runView({ index, query, type: meeting });
     await runView({ index, query });
-    expect(asked[0]).toContain('FROM props AS p WHERE p.key = ?');
-    expect(asked[1]).not.toContain('FROM props AS p WHERE p.key = ?');
+    expect(asked[0]).toContain('FROM props AS p WHERE p.path = ');
+    expect(asked[1]).not.toContain('FROM props AS p WHERE p.path = ');
   });
 });

@@ -21,15 +21,17 @@ import {
   type ViewQuery,
 } from './view-query.ts';
 import { listColumnOf } from './list-filter.ts';
+import { mainCompileViewQuery } from './main-view-query.test-support.ts';
 
 /**
  * #923 answers a filter on a list of text from the list's items in the index
  * (`list-filter.ts`) and reads a list's cell from its items alone. Neither may
- * change an answer. Here main's SQL — the view as #921 wrote it and every
- * filter compared against the cell, which is what `compileViewQuery` still
- * writes without the view's columns — and the new SQL run over one seeded
- * vault of hostile lists, and every query must come back with the same
- * columns and rows in the same order, ties included.
+ * change an answer. Here main's SQL — the view as #921 wrote it and main's
+ * compile, both frozen copies — and the new SQL run over one seeded vault of
+ * hostile lists, and every query must come back with the same columns and
+ * rows in the same order, ties included. One difference is deliberate and
+ * tested on its own (`list-filter.attack-929.sqlite.test.ts`): an item holding
+ * a NUL character, which this vault leaves out.
  */
 
 const root = new URL('../../../../', import.meta.url);
@@ -274,6 +276,15 @@ function vaultIndex(notes: readonly Note[], view: (spec: TypeViewSpec) => string
       }
     }
   });
+  // Rows no writer makes today (property-value.ts never sets text beside
+  // json): main's held rule and the item rule must still pick the same items.
+  notes.forEach((note, at) => {
+    if (at % 9 !== 0) return;
+    for (const key of ['people', 'attendees', 'tags', 'labels', 'aliases', 'members']) {
+      prop.run(note.path, key, 7, '', null, null, '{"name":"Mara Quill"}');
+      prop.run(note.path, key, 8, 'Mara Quill', null, null, '{"name":"Mara Quill"}');
+    }
+  });
   database.exec('COMMIT');
   for (const type of TYPES) {
     const select = view(specOf(type));
@@ -413,7 +424,7 @@ function answer(
 }
 
 /** The SQL of the item lookup, which main never wrote. */
-const ITEM_LOOKUP = 'FROM props AS p WHERE p.key = ?';
+const ITEM_LOOKUP = 'FROM props AS p WHERE p.path = ';
 
 describe('a filter on a list answers as it did before #923', () => {
   const notes = vaultNotes(SEED);
@@ -436,11 +447,17 @@ describe('a filter on a list answers as it did before #923', () => {
     let lookedUp = 0;
     let different = 0;
     let referenceLookups = 0;
+    let drifted = 0;
     for (const { name, query, includeArchived, linked } of all) {
       const reach = { includeArchived, ...(linked && { resolveLink }) };
       const was = answer(before, () => {
-        const compiled = compileViewQuery(query, {}, reach);
+        const compiled = mainCompileViewQuery(query, {}, reach);
         if (compiled.sql.includes(ITEM_LOOKUP)) referenceLookups += 1;
+        // Without the view's columns the compile is main's, word for word, so
+        // the step guards (list-filter-budget.test.ts) may stand it in for main.
+        if (JSON.stringify(compileViewQuery(query, {}, reach)) !== JSON.stringify(compiled)) {
+          drifted += 1;
+        }
         return compiled;
       });
       const now = answer(after, () => {
@@ -461,6 +478,7 @@ describe('a filter on a list answers as it did before #923', () => {
     expect(different).toBe(0);
     // The reference is main's: every filter on the cell.
     expect(referenceLookups).toBe(0);
+    expect(drifted).toBe(0);
     // Not so sparse a vault, nor so few lookups, that the comparison proves nothing.
     expect(rowsCompared).toBeGreaterThan(400_000);
     expect(lookedUp).toBeGreaterThan(1_500);
@@ -483,7 +501,7 @@ describe('a filter on a list answers as it did before #923', () => {
             { aggregate: { kind: 'count', column: null } } as const,
             { groupBy: key },
           ]) {
-            const was = answer(before, () => compileViewQuery(query, shape));
+            const was = answer(before, () => mainCompileViewQuery(query, shape));
             const now = answer(after, () =>
               compileViewQuery(query, shape, { viewColumns: viewColumnsOf.get(type.name) }),
             );
@@ -493,4 +511,43 @@ describe('a filter on a list answers as it did before #923', () => {
       }
     }
   });
+});
+
+/** The type as its view was before it held lists: each list a single value (`is a list` switched on since). */
+const singleSpec = (spec: TypeViewSpec): TypeViewSpec => ({
+  ...spec,
+  columns: spec.columns.map((column) => ({
+    ...column,
+    many: false,
+    kind: column.kind === 'multiSelect' ? 'select' : column.kind,
+  })),
+});
+
+describe('a filter on a list, while the index still holds the view from before it was a list', () => {
+  // The index rebuilds its views apart from the types a query is compiled
+  // with, and keeps the old ones when a rebuild fails: the filter is asked of
+  // the view the index holds, never of the types alone.
+  const notes = vaultNotes(SEED);
+  const before = vaultIndex(notes, (spec) => mainTypeViewSelectSql(singleSpec(spec)));
+  const after = vaultIndex(notes, (spec) => typeViewSelectSql(singleSpec(spec)));
+  const listed = new Map(TYPES.map((type) => [type.name, typeViewColumns(type)]));
+  const sample = cases(SEED).filter((_, at) => at % 7 === 0);
+
+  it(`keeps what main keeps on the old view, ${sample.length} queries`, () => {
+    let different = 0;
+    let rowsCompared = 0;
+    for (const { name, query, includeArchived } of sample) {
+      const was = answer(before, () => mainCompileViewQuery(query, {}, { includeArchived }));
+      const now = answer(after, () =>
+        compileViewQuery(query, {}, { includeArchived, viewColumns: listed.get(query.type) }),
+      );
+      if ('rows' in now) rowsCompared += now.rows.length;
+      if (JSON.stringify(now) !== JSON.stringify(was)) {
+        different += 1;
+        expect({ name, ...now }).toEqual({ name, ...was });
+      }
+    }
+    expect(different).toBe(0);
+    expect(rowsCompared).toBeGreaterThan(50_000);
+  }, 120_000);
 });

@@ -76,66 +76,141 @@ const reach = { viewColumns: viewColumnsOf([type], type.name) };
 const view = (over: Partial<ViewQuery>, shape: QueryShape = {}) =>
   compileViewQuery({ ...table, ...over }, shape, reach);
 const MARA: QueryFilter = { key: 'people', operator: 'contains', value: 'Mara' };
+const COUNT: QueryShape = { aggregate: { kind: 'count', column: null } };
 
-const STATEMENTS: Record<string, CompiledQuery> = {
-  MEETING_TABLE: view({}),
-  MEETING_TABLE_BY_DATE: view({ sorts: [{ key: 'date', direction: 'desc' }] }),
-  MEETING_TABLE_FILTERED: view({ filters: [MARA], sorts: [{ key: 'start', direction: 'asc' }] }),
-  MEETING_TABLE_TWO_LIST_FILTERS: view({
-    filters: [MARA, { key: 'tasks', operator: 'contains', value: 'Follow' }],
-  }),
-  MEETING_TABLE_PERSON_IS: view({
-    filters: [{ key: 'people', operator: 'is', value: '[[Mara Quill]]' }],
-  }),
-  MEETING_TABLE_WITHOUT_TASKS: view({ filters: [{ key: 'tasks', operator: 'isEmpty' }] }),
-  MEETING_SORT_BY_PEOPLE: view({ sorts: [{ key: 'people', direction: 'desc' }] }),
-  MEETING_SORT_BY_TWO_LISTS: view({
-    sorts: [
-      { key: 'people', direction: 'desc' },
-      { key: 'tasks', direction: 'asc' },
-    ],
-  }),
-  MEETING_COUNT: view({}, { aggregate: { kind: 'count', column: null } }),
-  MEETING_COUNT_FILTERED: view({ filters: [MARA] }, { aggregate: { kind: 'count', column: null } }),
-  MEETING_GROUPS: view({}, { groupBy: 'kind' }),
-  MEETING_GROUPS_BY_PEOPLE: view({}, { groupBy: 'people' }),
-  MEETING_GROUPS_BY_PEOPLE_FILTERED: view({ filters: [MARA] }, { groupBy: 'people' }),
+/** Twenty books, in a vault of meetings that share their list keys (#929). */
+const book = parseObjectType({
+  name: 'book',
+  properties: {
+    people: { kind: 'relation', target: 'person', many: true },
+    companies: { kind: 'relation', target: 'company', many: true },
+  },
+});
+const books = (filter: QueryFilter) =>
+  compileViewQuery(
+    { ...typeTableQuery(book), filters: [filter] },
+    {},
+    {
+      viewColumns: viewColumnsOf([book], book.name),
+    },
+  );
+
+/** Each statement, with what it binds before its LIMIT. */
+const STATEMENTS: Record<string, [CompiledQuery, readonly string[]]> = {
+  MEETING_TABLE: [view({}), []],
+  MEETING_TABLE_BY_DATE: [view({ sorts: [{ key: 'date', direction: 'desc' }] }), []],
+  // contains, every meeting matching: Mara Quill is in each.
+  MEETING_TABLE_FILTERED: [
+    view({ filters: [MARA], sorts: [{ key: 'start', direction: 'asc' }] }),
+    ['people', 'Mara', 'Mara'],
+  ],
+  MEETING_CONTAINS_NONE: [
+    view({ filters: [{ key: 'people', operator: 'contains', value: 'Zed' }] }),
+    ['people', 'Zed', 'Zed'],
+  ],
+  MEETING_TABLE_TWO_LIST_FILTERS: [
+    view({ filters: [MARA, { key: 'tasks', operator: 'contains', value: 'Follow' }] }),
+    ['people', 'Mara', 'Mara', 'tasks', 'Follow', 'Follow'],
+  ],
+  // is, no meeting matching: each has two people or more.
+  MEETING_TABLE_PERSON_IS: [
+    view({ filters: [{ key: 'people', operator: 'is', value: '[[Mara Quill]]' }] }),
+    ['people', '[[Mara Quill]]', '[[Mara Quill]]'],
+  ],
+  MEETING_IS_ALL: [
+    view({ filters: [{ key: 'companies', operator: 'is', value: '[[Larkspur Payroll]]' }] }),
+    ['companies', '[[Larkspur Payroll]]', '[[Larkspur Payroll]]'],
+  ],
+  MEETING_IS_NOT_ALL: [
+    view({ filters: [{ key: 'people', operator: 'isNot', value: '[[Mara Quill]]' }] }),
+    ['people', '[[Mara Quill]]', '[[Mara Quill]]'],
+  ],
+  MEETING_IS_NOT_NONE: [
+    view({ filters: [{ key: 'companies', operator: 'isNot', value: '[[Larkspur Payroll]]' }] }),
+    ['companies', '[[Larkspur Payroll]]', '[[Larkspur Payroll]]'],
+  ],
+  MEETING_TABLE_WITHOUT_TASKS: [
+    view({ filters: [{ key: 'tasks', operator: 'isEmpty' }] }),
+    ['tasks'],
+  ],
+  MEETING_IS_EMPTY_ALL: [
+    view({ filters: [{ key: 'decisions', operator: 'isEmpty' }] }),
+    ['decisions'],
+  ],
+  MEETING_IS_EMPTY_NONE: [view({ filters: [{ key: 'people', operator: 'isEmpty' }] }), ['people']],
+  MEETING_IS_NOT_EMPTY_ALL: [
+    view({ filters: [{ key: 'people', operator: 'isNotEmpty' }] }),
+    ['people'],
+  ],
+  MEETING_IS_NOT_EMPTY_NONE: [
+    view({ filters: [{ key: 'decisions', operator: 'isNotEmpty' }] }),
+    ['decisions'],
+  ],
+  // startsWith stays on the cell (#929).
+  MEETING_STARTS_WITH_ALL: [
+    view({ filters: [{ key: 'people', operator: 'startsWith', value: '[[' }] }),
+    ['[['],
+  ],
+  MEETING_SORT_BY_PEOPLE: [view({ sorts: [{ key: 'people', direction: 'desc' }] }), []],
+  // The attack's statement on #921 (type-table-budget.attack-921.test.ts).
+  MEETING_SORT_BY_TWO_LISTS: [
+    view({
+      sorts: [
+        { key: 'people', direction: 'desc' },
+        { key: 'attendees', direction: 'asc' },
+      ],
+    }),
+    [],
+  ],
+  MEETING_COUNT: [view({}, COUNT), []],
+  MEETING_COUNT_FILTERED: [view({ filters: [MARA] }, COUNT), ['people', 'Mara', 'Mara']],
+  MEETING_GROUPS: [view({}, { groupBy: 'kind' }), []],
+  MEETING_GROUPS_BY_PEOPLE: [view({}, { groupBy: 'people' }), []],
+  MEETING_GROUPS_BY_PEOPLE_FILTERED: [
+    view({ filters: [MARA] }, { groupBy: 'people' }),
+    ['people', 'Mara', 'Mara'],
+  ],
+  BOOK_CONTAINS: [books(MARA), ['people', 'Mara', 'Mara']],
+  BOOK_IS: [
+    books({ key: 'people', operator: 'is', value: '[[Mara Quill]]' }),
+    ['people', '[[Mara Quill]]', '[[Mara Quill]]'],
+  ],
+  BOOK_IS_NOT: [
+    books({ key: 'people', operator: 'isNot', value: '[[Mara Quill]]' }),
+    ['people', '[[Mara Quill]]', '[[Mara Quill]]'],
+  ],
+  BOOK_IS_EMPTY: [books({ key: 'people', operator: 'isEmpty' }), ['people']],
+  BOOK_IS_NOT_EMPTY: [books({ key: 'people', operator: 'isNotEmpty' }), ['people']],
 };
 
 describe('the SQL the type-table budget tests run is the SQL TypeScript writes (#919)', () => {
-  it('the Meeting view', () => {
+  it('the Meeting and Book views', () => {
     expect(rustConstant('MEETING_VIEW')).toBe(viewSpecsFor([type])[0]?.select);
+    expect(rustConstant('BOOK_VIEW')).toBe(viewSpecsFor([book])[0]?.select);
   });
 
-  it.each(Object.entries(STATEMENTS))('%s', (name, compiled) => {
+  it.each(Object.entries(STATEMENTS))('%s', (name, [compiled]) => {
     expect(rustConstant(name)).toBe(compiled.sql);
   });
 
-  it('binds what the Rust tests bind', () => {
-    const bound = Object.fromEntries(
-      Object.entries(STATEMENTS).map(([name, { parameters }]) => [name, parameters]),
-    );
-    expect(bound).toEqual({
-      MEETING_TABLE: [500],
-      MEETING_TABLE_BY_DATE: [500],
-      MEETING_TABLE_FILTERED: ['people', 'Mara', 500],
-      MEETING_TABLE_TWO_LIST_FILTERS: ['people', 'Mara', 'tasks', 'Follow', 500],
-      MEETING_TABLE_PERSON_IS: ['people', '[[Mara Quill]]', 500],
-      MEETING_TABLE_WITHOUT_TASKS: ['tasks', 500],
-      MEETING_SORT_BY_PEOPLE: [500],
-      MEETING_SORT_BY_TWO_LISTS: [500],
-      MEETING_COUNT: [500],
-      MEETING_COUNT_FILTERED: ['people', 'Mara', 500],
-      MEETING_GROUPS: [500],
-      MEETING_GROUPS_BY_PEOPLE: [500],
-      MEETING_GROUPS_BY_PEOPLE_FILTERED: ['people', 'Mara', 500],
-    });
-  });
+  it.each(Object.entries(STATEMENTS))(
+    '%s binds what the Rust tests bind',
+    (name, [compiled, binds]) => {
+      expect(compiled.parameters).toEqual([...binds, 500]);
+      const bound = new RegExp(
+        `\\(\\s*"[^"]*",\\s*${name},\\s*vec!\\[([\\s\\S]*?)limit\\(\\)`,
+      ).exec(TESTS_RS);
+      const rust = [...(bound?.[1] ?? '').matchAll(/text\("([^"]*)"\)/g)].map((found) => found[1]);
+      expect(rust, `${name} in statements()`).toEqual(binds);
+    },
+  );
 
   it('every statement the Rust tests run is one written here', () => {
-    const constants = [...TESTS_RS.matchAll(/^const (MEETING_\w+): &str = r#"/gm)].map(
+    const constants = [...TESTS_RS.matchAll(/^const ((?:MEETING|BOOK)_\w+): &str = r#"/gm)].map(
       (found) => found[1],
     );
-    expect(constants.sort()).toEqual(['MEETING_VIEW', ...Object.keys(STATEMENTS)].sort());
+    expect(constants.sort()).toEqual(
+      ['MEETING_VIEW', 'BOOK_VIEW', ...Object.keys(STATEMENTS)].sort(),
+    );
   });
 });

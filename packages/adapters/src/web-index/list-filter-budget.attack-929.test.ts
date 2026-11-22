@@ -152,7 +152,10 @@ beforeAll(async () => {
 function stepsOldAndNew(of: ObjectType, filter: QueryFilter): { cell: number; items: number } {
   const query = { ...typeTableQuery(of), filters: [filter] };
   const items = compileViewQuery(query, {}, { viewColumns: typeViewColumns(of) });
-  expect(items.sql).toContain('FROM props AS p WHERE p.key = ?');
+  // startsWith stays on the cell (#929); every other list filter asks the note's items.
+  if (filter.operator !== 'startsWith') {
+    expect(items.sql).toContain('FROM props AS p WHERE p.path = ');
+  }
   return { cell: stepsOf(compileViewQuery(query)), items: stepsOf(items) };
 }
 
@@ -169,10 +172,16 @@ describe(`a list filter costs no more than the cell's, ${MEETINGS} meetings (#92
     for (const filter of [
       STARTS,
       { key: 'people', operator: 'contains', value: 'Mara' },
+      { key: 'people', operator: 'is', value: '[[Mara Quill]]' },
+      { key: 'people', operator: 'isNot', value: '[[Mara Quill]]' },
       { key: 'people', operator: 'isEmpty' },
+      { key: 'people', operator: 'isNotEmpty' },
     ] as const) {
       const { cell, items } = stepsOldAndNew(book, filter);
-      expect(items, `${filter.operator} on ${BOOKS} books`).toBeLessThanOrEqual(cell * 2);
+      // Never dearer than the cell's, but for a small constant (#929's bar).
+      expect(items, `${filter.operator} on ${BOOKS} books`).toBeLessThanOrEqual(
+        Math.max(cell * 1.1, cell + 5_000),
+      );
     }
   });
 });

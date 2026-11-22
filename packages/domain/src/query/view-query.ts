@@ -18,7 +18,12 @@ import { linkTargets } from '../index/relation-rows.ts';
 import { TAGS_KEY } from '../tags/note-tags.ts';
 import { isWikiLink } from '../types/property-value.ts';
 import type { TypeViewColumn } from '../query-language/type-view.ts';
-import { listColumnOf, listCondition } from './list-filter.ts';
+import {
+  listColumnOf,
+  listCondition,
+  viewJoinsItemsSql,
+  type ListFilterSite,
+} from './list-filter.ts';
 
 export { InvalidQueryError };
 
@@ -190,7 +195,9 @@ export function compileViewQuery(
   const conditions = [
     OUTSIDE_ATLAS,
     ...(reach.includeArchived === true ? [] : archivedLeftOut(query.type, table)),
-    ...query.filters.map((filter) => condition(filter, parameters, reach)),
+    ...query.filters.map((filter) =>
+      condition(filter, { parameters, reach, table, view: viewNameFor(query.type) }),
+    ),
   ];
 
   const order = ordering(query, shape);
@@ -327,36 +334,55 @@ function ordering(query: ViewQuery, shape: QueryShape): string[] {
   ];
 }
 
-function condition(
-  filter: QueryFilter,
-  parameters: (string | number)[],
-  reach: QueryReach,
-): string {
-  return itemCondition(filter, parameters, reach) ?? cellCondition(filter, parameters, reach);
+/** Where a filter is compiled: the view it narrows, and what it binds into. */
+interface FilterSite extends ListFilterSite {
+  readonly parameters: (string | number)[];
+  readonly reach: QueryReach;
 }
 
 /**
- * A filter on a list of text, as a lookup of the notes whose items match
+ * A filter on a list of text is asked of the note's items when the view the
+ * index holds joins that list from its items, and of its cell when it does
+ * not (`viewJoinsItemsSql`); any other filter, of its cell.
+ */
+function condition(filter: QueryFilter, site: FilterSite): string {
+  const cellParameters: (string | number)[] = [];
+  const cell = cellCondition(filter, cellParameters, site.reach);
+  const column = listColumnOf(filter.key, site.reach.viewColumns);
+  const itemParameters: (string | number)[] = [];
+  const items = column === null ? null : itemCondition(filter, column, site, itemParameters);
+  if (column === null || items === null) {
+    site.parameters.push(...cellParameters);
+    return cell;
+  }
+  site.parameters.push(...itemParameters, ...cellParameters);
+  return `CASE WHEN ${viewJoinsItemsSql(column, site)} THEN ${items} ELSE ${cell} END`;
+}
+
+/**
+ * A filter on a list of text, as a lookup of the note's matching items
  * (`listCondition`); null to compare the cell instead — the list's cell
  * when no lookup keeps the same notes, and a filter by a link by the note
  * it opens, which is a lookup already.
  */
 function itemCondition(
   filter: QueryFilter,
+  column: TypeViewColumn,
+  site: FilterSite,
   parameters: (string | number)[],
-  { resolveLink, viewColumns }: QueryReach,
 ): string | null {
-  const column = listColumnOf(filter.key, viewColumns);
-  if (column === null) return null;
   const { operator, value } = filter;
   if (WITHOUT_VALUE.includes(operator)) {
-    return listCondition({ operator, column, value: undefined }, parameters);
+    return listCondition({ operator, column, value: undefined }, site, parameters);
   }
   if (typeof value !== 'string' || relativeDateSql(value) !== null) return null;
-  if (comparesExactly(filter) && resolveLink !== undefined && isWikiLink(value)) return null;
+  if (comparesExactly(filter) && site.reach.resolveLink !== undefined && isWikiLink(value)) {
+    return null;
+  }
   const tag = comparesExactly(filter) && filter.key === TAGS_KEY;
   return listCondition(
     { operator, column, value: tag ? tagText(value) : value, ignoreCase: tag },
+    site,
     parameters,
   );
 }

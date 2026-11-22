@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { TypeViewColumn } from '../query-language/type-view.ts';
-import { listColumnOf, listCondition } from './list-filter.ts';
+import { typeViewSelectSql, type TypeViewColumn } from '../query-language/type-view.ts';
+import { listColumnOf, listCondition, viewJoinsItemsSql } from './list-filter.ts';
 import { compileViewQuery, type QueryFilter, type QueryReach } from './view-query.ts';
 
 const PEOPLE: TypeViewColumn = { key: 'people', kind: 'relation', many: true };
@@ -14,7 +14,7 @@ const COLUMNS: readonly TypeViewColumn[] = [
   { key: 'project', kind: 'relation', many: false },
 ];
 
-const LOOKUP = 'FROM props AS p WHERE p.key = ?';
+const LOOKUP = 'FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ?';
 
 describe('listColumnOf', () => {
   it('finds a list of text by its key in any case, as SQLite reads a column name', () => {
@@ -39,6 +39,7 @@ describe('listColumnOf', () => {
 });
 
 describe('listCondition', () => {
+  const SITE = { table: '"v_meeting"', view: 'v_meeting' };
   const lookup = (filter: Omit<QueryFilter, 'key'>) => {
     const parameters: (string | number)[] = [];
     const sql = listCondition(
@@ -47,32 +48,42 @@ describe('listCondition', () => {
         operator: filter.operator,
         value: typeof filter.value === 'string' ? filter.value : undefined,
       },
+      SITE,
       parameters,
     );
     return { sql, parameters };
   };
 
-  it('binds the key, then the value', () => {
+  it('asks the note’s own items, by its path in the view, binding the key and then the value', () => {
     expect(lookup({ operator: 'contains', value: 'Mara' })).toEqual({
-      sql: `"path" IN (SELECT p.path FROM props AS p WHERE p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')`,
+      sql: `EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '' AND p.value_text LIKE '%' || ? || '%')`,
       parameters: ['people', 'Mara'],
     });
     expect(lookup({ operator: 'isEmpty' }).parameters).toEqual(['people']);
   });
 
-  it('leaves out, rather than keeps, the notes found for a negation', () => {
-    expect(lookup({ operator: 'isEmpty' }).sql).toMatch(/^"path" NOT IN /);
-    expect(lookup({ operator: 'isNotEmpty' }).sql).toMatch(/^"path" IN /);
-    expect(lookup({ operator: 'isNot', value: '[[Mara Quill]]' }).sql).toMatch(/^"path" NOT IN /);
+  it('compares the one item a note holds as the cell is compared, by IS', () => {
+    expect(lookup({ operator: 'is', value: '[[Mara Quill]]' }).sql).toBe(
+      `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS ?`,
+    );
+    expect(lookup({ operator: 'isNot', value: '[[Mara Quill]]' }).sql).toMatch(/\) IS NOT \?$/);
+  });
+
+  it('leaves out, rather than keeps, the notes holding an item for is empty', () => {
+    expect(lookup({ operator: 'isEmpty' }).sql).toMatch(/^NOT EXISTS /);
+    expect(lookup({ operator: 'isNotEmpty' }).sql).toMatch(/^EXISTS /);
   });
 
   it('takes no pattern that could match across the separator, and binds nothing then', () => {
     for (const value of ['a, b', 'a,b', ', b', ' b', '%', 'x_y']) {
       expect(lookup({ operator: 'contains', value })).toEqual({ sql: null, parameters: [] });
-      expect(lookup({ operator: 'startsWith', value })).toEqual({ sql: null, parameters: [] });
     }
     expect(lookup({ operator: 'is', value: 'a, b' }).sql).toBeNull();
     expect(lookup({ operator: 'is', value: 'a,b' }).sql).not.toBeNull();
+  });
+
+  it('leaves startsWith to the cell: only the table knows an item’s place (#929)', () => {
+    expect(lookup({ operator: 'startsWith', value: '[[' })).toEqual({ sql: null, parameters: [] });
   });
 
   it('leaves greater and less than to the cell, which compare past the first item', () => {
@@ -89,17 +100,30 @@ describe('compileViewQuery with the view’s columns (#923)', () => {
       { viewColumns: COLUMNS, ...reach },
     );
 
-  it('looks a list filter up by its items', () => {
+  it('looks a list filter up by its items, where the view the index holds joins them', () => {
     const { sql, parameters } = compiled({ key: 'People', operator: 'contains', value: 'Mara' });
+    expect(sql).toContain(
+      `CASE WHEN ${viewJoinsItemsSql(PEOPLE, { table: '"v_meeting"', view: 'v_meeting' })} THEN EXISTS (`,
+    );
     expect(sql).toContain(LOOKUP);
-    // The key the index holds, not the filter's spelling of it.
-    expect(parameters).toEqual(['people', 'Mara', 10]);
+    // Else the cell, as main compares it.
+    expect(sql).toContain(`ELSE "People" LIKE '%' || ? || '%' END`);
+    // The key the index holds, not the filter's spelling of it; then the cell's value.
+    expect(parameters).toEqual(['people', 'Mara', 'Mara', 10]);
+  });
+
+  it('asks the view for the cell exactly as the view writes it', () => {
+    const check = viewJoinsItemsSql(PEOPLE, { table: '"v_meeting"', view: 'v_meeting' });
+    const select = typeViewSelectSql({ name: 'meeting', columns: [PEOPLE], progress: false }) ?? '';
+    const cell = /instr\(sql, '(.*)'\) > 0/.exec(check)?.[1]?.replaceAll("''", "'") ?? '';
+    expect(cell).toContain('AS "people"');
+    expect(select).toContain(cell);
   });
 
   it('compares a tag without regard to case, its # and spaces left off', () => {
     const { sql, parameters } = compiled({ key: 'tags', operator: 'is', value: ' #Errand ' });
-    expect(sql).toContain('p.value_text = ? COLLATE NOCASE');
-    expect(parameters).toEqual(['tags', 'Errand', 10]);
+    expect(sql).toContain(') IS ? COLLATE NOCASE ELSE "tags" IS ? COLLATE NOCASE END');
+    expect(parameters).toEqual(['tags', 'Errand', 'Errand', 10]);
   });
 
   it('keeps a link filter by the note it opens', () => {

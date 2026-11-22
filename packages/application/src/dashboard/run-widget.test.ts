@@ -589,7 +589,7 @@ describe('a widget filtered by a list (#923)', () => {
     properties: { people: { kind: 'relation', target: 'person', many: true } },
   });
   const filters = [{ key: 'people', operator: 'contains', value: 'Mara' }];
-  const LOOKUP = 'FROM props AS p WHERE p.key = ?';
+  const LOOKUP = 'FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ?';
 
   const askedBy = async (source: Record<string, unknown>, types = [meeting]) => {
     const asked: { sql: string; parameters: readonly unknown[] }[] = [];
@@ -609,7 +609,7 @@ describe('a widget filtered by a list (#923)', () => {
   it('asks the index for the notes whose items match, by the type’s columns', async () => {
     const [asked] = await askedBy({ kind: 'number', type: 'meeting', aggregate: 'count', filters });
     expect(asked?.sql).toContain(LOOKUP);
-    expect(asked?.parameters).toEqual(['people', 'Mara', 500]);
+    expect(asked?.parameters).toEqual(['people', 'Mara', 'Mara', 500]);
   });
 
   it('asks each of a hero’s questions the same way', async () => {

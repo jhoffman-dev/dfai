@@ -122,8 +122,10 @@ describe('countQuickViews', () => {
       notePaths: [],
     });
 
-    expect(query.mock.calls[0]?.[0]).toContain('"path" IN (SELECT p.path FROM props AS p');
-    expect(query.mock.calls[0]?.[1]).toEqual(['people', 'Mara', 500]);
+    expect(query.mock.calls[0]?.[0]).toContain(
+      'EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path"',
+    );
+    expect(query.mock.calls[0]?.[1]).toEqual(['people', 'Mara', 'Mara', 500]);
     expect(counts.get('inbox')).toBe(3);
   });
 

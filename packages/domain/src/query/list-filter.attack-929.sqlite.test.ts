@@ -64,16 +64,21 @@ function pathsOf(database: DatabaseSync, query: ViewQuery, reach: QueryReach): u
 }
 
 describe('attack 929: a list filter from the items keeps the rows the cell kept', () => {
-  it('contains keeps the same notes when an earlier item holds a NUL character', () => {
-    // YAML's "\0" escape writes U+0000 into an item; LIKE reads its text only up to it.
+  // The one deliberate difference from main (list-filter.ts): YAML's "\0"
+  // escape writes U+0000 into an item, and LIKE reads a text only up to it, so
+  // the joined cell hid every item after one holding a NUL. Item by item, each
+  // is read up to its own NUL, and the later item is found.
+  it('contains finds an item that follows one holding a NUL character, as the cell did not', () => {
     const database = vaultOf(LISTED, {
       'a.md': { attendees: ['x\u0000y', 'mara@example.com'] },
       'b.md': { attendees: ['mara@example.com'] },
     });
     const query = tableOf({ key: 'attendees', operator: 'contains', value: 'mara' });
-    const cell = pathsOf(database, query, {});
-    expect(cell).toEqual(['b.md']);
-    expect(pathsOf(database, query, { viewColumns: typeViewColumns(LISTED) })).toEqual(cell);
+    expect(pathsOf(database, query, {})).toEqual(['b.md']);
+    expect(pathsOf(database, query, { viewColumns: typeViewColumns(LISTED) })).toEqual([
+      'a.md',
+      'b.md',
+    ]);
   });
 
   it('a filter keeps no note whose shown cell the filter rejects when the view predates a list', () => {

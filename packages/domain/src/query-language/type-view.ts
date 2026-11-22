@@ -87,7 +87,7 @@ const cellSql = (key: string, aggregate: string, held = HELD) =>
  * held, so the cell is exactly these rows' texts (#923). Read through
  * `props_path` alone, without each row's `value_json`.
  */
-export const LIST_ITEM = "p.value_text <> ''";
+const LIST_ITEM = "p.value_text <> ''";
 
 /**
  * Whether a column's cell is its items' texts joined by `', '` in written
@@ -108,14 +108,17 @@ const ORDERED = '(p.idx * 4294967296 + p.rowid + 1000000000000000000)';
 
 /** One column's cell, as the query draws the field (`cellOf`), out of its note's rows. */
 function columnSql(column: TypeViewColumn): string {
-  if (joinsTextItems(column))
-    return cellSql(
-      column.key,
-      "group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid)",
-      LIST_ITEM,
-    );
+  if (joinsTextItems(column)) return listCellSql(column.key);
   return cellSql(column.key, columnAggregate(column));
 }
+
+/**
+ * A list of text's cell, as the view writes it: its items joined in written
+ * order. A filter asks whether the view the index holds was written with it
+ * (`list-filter.ts`), so this text is the view's and the filter's alike.
+ */
+export const listCellSql = (key: string): string =>
+  cellSql(key, "group_concat(p.value_text, ', ' ORDER BY p.idx, p.rowid)", LIST_ITEM);
 
 /** How a column's cell is made of its rows, by the same rules as `valueRowsSql`. */
 function columnAggregate(column: TypeViewColumn): string {
