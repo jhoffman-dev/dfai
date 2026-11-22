@@ -37,7 +37,10 @@ export interface OddDueForm {
   readonly value: unknown;
   /** The day Today, the review and the Inbox read from the index (the first dated entry), as main did. */
   readonly indexedDay: string | null;
-  /** The time Today and the review show (the first dated entry's). */
+  /**
+   * The time every surface reads and shows: one entry's only. A list of
+   * several is judged by its first day alone, as main judged it.
+   */
   readonly indexedTime: string | null;
 }
 
@@ -46,7 +49,7 @@ export const ODD_DUE_FORMS: readonly OddDueForm[] = [
     form: 'a list of two dates',
     value: ['2026-12-04T15:30', '2026-12-05'],
     indexedDay: DUE_FORM_DAY,
-    indexedTime: '15:30',
+    indexedTime: null,
   },
   {
     form: 'a list, a date then words',
@@ -58,7 +61,7 @@ export const ODD_DUE_FORMS: readonly OddDueForm[] = [
     form: 'a list, words then a date',
     value: ['soon', '2026-12-04T09:00'],
     indexedDay: DUE_FORM_DAY,
-    indexedTime: '09:00',
+    indexedTime: null,
   },
   { form: 'a list of words', value: ['soon', 'later'], indexedDay: null, indexedTime: null },
   {

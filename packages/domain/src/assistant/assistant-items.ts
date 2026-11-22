@@ -1,4 +1,4 @@
-import { dueOf, isPastDue } from '../gtd/task-due.ts';
+import { dueAt, dueOf, isOnePlainDue, isPastDue } from '../gtd/task-due.ts';
 import { TASK_KEYS, WAITING_STATUS } from '../gtd/gtd-status.ts';
 import { daysWaited } from '../linked-pages/linked-rows.ts';
 import type { LinkedSectionId } from '../linked-pages/linked-sections.ts';
@@ -141,8 +141,7 @@ export function loopTask({
   waiting?: boolean;
 }): LoopTask {
   const status = textOf(row.values[words.key]) ?? (waiting ? WAITING_STATUS : null);
-  // The day of its due as every surface reads one (#928): `2026-12-04T23:60` is no due.
-  const due = dueOf(row.values[TASK_KEYS.due])?.day ?? null;
+  const due = dueDayOf(row.values[TASK_KEYS.due]);
   const waits = status === WAITING_STATUS;
   const open = words.done === null || status !== words.done;
   return {
@@ -156,11 +155,25 @@ export function loopTask({
   };
 }
 
-/** Whether a due has passed on the day and at the time asked, by the one due rule (#928). */
+/**
+ * A task's due day: one plain value as every surface reads one (#928) —
+ * `2026-12-04T23:60` is no due — and any other, a list or a mapping, as
+ * main read it: the day its text starts with (PR #930 audit).
+ */
+function dueDayOf(value: unknown): string | null {
+  return isOnePlainDue(value) ? (dueOf(value)?.day ?? null) : dayOf(value);
+}
+
+/**
+ * Whether a due has passed on the day and at the time asked, by the one due
+ * rule (#928); a value that is not one plain due by its day alone, as main judged it.
+ */
 function pastDue(value: unknown, context: ItemContext): boolean {
-  const due = dueOf(value);
+  const due = isOnePlainDue(value) ? dueOf(value) : dueDayAt(dayOf(value));
   return due !== null && isPastDue(due, { today: context.day, time: context.time });
 }
+
+const dueDayAt = (day: string | null) => (day === null ? null : dueAt(day, null));
 
 /** How a follow-up was reached: it names the page itself, or only a meeting of it. */
 export interface FollowUpTask extends LoopTask {
@@ -171,7 +184,7 @@ export interface FollowUpTask extends LoopTask {
 
 /** A follow-up the index found from a page or its meetings, as an item. */
 export function followUpTask(row: FollowUpRow, context: ItemContext): FollowUpTask {
-  const due = dueOf(row.due)?.day ?? null;
+  const due = dueDayOf(row.due);
   const waits = row.status === WAITING_STATUS;
   const meeting =
     row.meeting === null || row.direct

@@ -22,11 +22,13 @@ export const firstDaySql = (key: string, column: string) =>
   `(SELECT substr(p.value_date, 1, 10) FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
 
 /**
- * A date property's first dated value as the index holds it — its day, and
- * its time when one is written (#928); null when it holds no date.
+ * A date property's value as the index dates it — its day, and its time when
+ * one is written (#928) — where it holds one item, and that a date; null
+ * otherwise. A list of several is judged by its first day alone, as before
+ * #928 (PR #930 audit): no time is read from it.
  */
-export const firstDatedSql = (key: string, column: string) =>
-  `(SELECT p.value_date FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND p.value_date IS NOT NULL ORDER BY p.idx, p.rowid LIMIT 1)`;
+export const singleDatedSql = (key: string, column: string) =>
+  `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_date) END FROM props AS p WHERE p.path = ${column} AND p.key = '${key}' AND COALESCE(p.value_text, p.value_json, '') <> '')`;
 
 /**
  * 1 when a property holds something other than one day — words, a number, a

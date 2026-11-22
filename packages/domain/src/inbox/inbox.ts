@@ -451,9 +451,16 @@ export function inboxItem(row: {
   };
 }
 
-/** The time of the first item of `due` the index dates, from every item as written ({@link allItems}). */
+/**
+ * The time of `due`, from every item as written ({@link allItems}), where it
+ * is one entry: a row's new day writes a day over several, so it promises
+ * to keep no time of theirs (PR #930 audit).
+ */
 function dueTimeOfWritten(written: unknown): string | null {
-  return typeof written === 'string' ? (dueOf(written.split('\u001f'))?.time ?? null) : null;
+  if (typeof written !== 'string') return null;
+  // A blank item is no item, as the index counts them.
+  const items = written.split('\u001f').filter((item) => item.trim() !== '');
+  return items.length === 1 ? (dueOf(items[0])?.time ?? null) : null;
 }
 
 function inboxTask(row: {

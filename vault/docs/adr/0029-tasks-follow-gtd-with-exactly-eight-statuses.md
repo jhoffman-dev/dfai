@@ -381,6 +381,15 @@ and time. Nothing changes for a due that names only its day.
   `2026-12-04T15:30:00Z` by another tool is read as 15:30 on the Mac's
   clock, which may be hours from 15:30 UTC. The Todoist sync must write
   local wall-clock times with no zone.
+- **A due that is not one plain value** — a list of several entries, a
+  mapping, a number, `true`, a blank — is treated as before #928 wherever
+  anything is decided: judged by its first dated day with no time (Today,
+  the review, overdue), not placed on a task calendar (so never moved),
+  edited in the properties panel as main edited it (no time field), written
+  over by a new day on an Inbox row or through the API, rolled as main rolled
+  it, and never the same as another task's due in the Inbox assist's
+  duplicate check (it asks, and the due is carried over). Only one entry
+  (`due: 2026-12-04T15:30`, or a list of one) is read with its time.
 - **The index is unchanged.** `value_date` already holds the due as written
   whenever it is a date (`property-value.ts`). Its first ten characters
   are the day, which every query, filter and task row reads

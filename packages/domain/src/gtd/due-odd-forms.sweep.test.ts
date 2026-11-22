@@ -80,8 +80,7 @@ describe('Clarify a new day: as main wrote it', () => {
       due: form.indexedDay,
       dueWritten: written,
     });
-    const single = Array.isArray(form.value) && form.value.length === 1;
-    expect(item.task?.dueTime ?? null).toBe(single ? form.indexedTime : null);
+    expect(item.task?.dueTime ?? null).toBe(form.indexedTime);
   });
 });
 

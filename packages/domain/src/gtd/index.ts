@@ -66,6 +66,7 @@ export {
   dueOfDated,
   dueTimeOfDated,
   dueWithTime,
+  isOnePlainDue,
   isPastDue,
   isWallTime,
   readsTaskDue,

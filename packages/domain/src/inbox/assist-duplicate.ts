@@ -113,7 +113,17 @@ function dueAlike({ held, answer }: AssistCopyFacts, task: TaskCandidate): boole
   if (task.dueUnread || (held.due !== null && held.due.resolved === null)) return false;
   const mine = held.due?.resolved ?? answer.due;
   if (task.due === null || mine === null) return true;
+  // Several entries on either side are never one due agreed: asked (PR #930 audit).
+  if (task.dueMany === true || (held.due !== null && heldMany(held.due.written))) return false;
   return mine === task.due && (held.due === null || !dueDiffers(held.due.written, task));
+}
+
+/**
+ * Whether what is written under a due is not one plain value: several items,
+ * or one holding several joined (`a, b`), which no single date ever does.
+ */
+function heldMany(written: readonly string[]): boolean {
+  return written.length > 1 || written.some((item) => item.includes(','));
 }
 
 /**
@@ -188,6 +198,8 @@ function newerHolds(facts: AssistCopyFacts, task: TaskCandidate): string[] {
     if (theirs === undefined || theirs.length === 0) return true;
     // A due is the same when it names the same day and time, however it is written (#928).
     if (key === 'due') {
+      // Not one plain value on either side: carried over, never claimed the same (PR #930 audit).
+      if (task.dueMany === true || heldMany(mine)) return mine.length > 0;
       return mine.length > 0 && (dueOf(mine) === null || dueDiffers(mine, task));
     }
     return bothDiffer(mine, theirs);

@@ -59,7 +59,10 @@ export function assistTaskCandidate(row: Readonly<Record<string, unknown>>): Tas
   const day = (value: unknown) => (typeof value === 'string' && value !== '' ? value : null);
   const due = day(row['due']);
   const defer = day(row['defer']);
-  const dueTime = dueOf(written(row['dueWritten']).split('\u001f'))?.time ?? null;
+  const dueItems = written(row['dueWritten'])
+    .split('\u001f')
+    .filter((item) => item.trim() !== '');
+  const dueTime = dueItems.length === 1 ? (dueOf(dueItems[0])?.time ?? null) : null;
   return {
     path: createVaultPath(String(row['path'])),
     title: String(row['title'] ?? ''),
@@ -67,6 +70,7 @@ export function assistTaskCandidate(row: Readonly<Record<string, unknown>>): Tas
     status: gtdStatusOf(row['status']),
     due,
     ...(dueTime !== null && { dueTime }),
+    ...(dueItems.length > 1 && { dueMany: true }),
     dueUnread: due === null && written(row['dueWritten']) !== '',
     // A defer written but not a day is still deferred: read as some day, never as none.
     defer: defer ?? (written(row['deferWritten']) === '' ? null : written(row['deferWritten'])),

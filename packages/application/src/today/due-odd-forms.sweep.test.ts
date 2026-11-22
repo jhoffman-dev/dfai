@@ -10,8 +10,8 @@ import { readToday } from './read-today.ts';
 /**
  * PR #930 audit: a `due` that is not one plain value, read from an index by
  * Today, the weekly review and the Inbox. Each reads the first dated entry's
- * day, as main did; Today and the review show its time; the Inbox, whose new
- * day writes a day over several values, shows no time it would not keep.
+ * day, as main did, and a time only from one entry: a list of several is
+ * judged, and shown, by its first day alone.
  */
 const clock = {
   today: () => DUE_FORM_DAY,
@@ -44,11 +44,10 @@ describe('Today and the weekly review', () => {
 });
 
 describe('the Inbox', () => {
-  it.each(ODD_DUE_FORMS)('reads $form’s day, and a time only for one value', async (form) => {
+  it.each(ODD_DUE_FORMS)('reads $form’s day, and a time only from one entry', async (form) => {
     const { index } = portsFor('Inbox/Probe.md', form.value);
     const task = (await listInbox({ index })).items.find((item) => item.title === 'Probe')?.task;
     expect(task?.due).toBe(form.indexedDay);
-    const one = Array.isArray(form.value) && form.value.length === 1;
-    expect(task?.dueTime ?? null).toBe(one ? form.indexedTime : null);
+    expect(task?.dueTime ?? null).toBe(form.indexedTime);
   });
 });

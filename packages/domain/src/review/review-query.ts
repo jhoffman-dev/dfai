@@ -2,7 +2,7 @@ import { outsideArchiveSql } from '../archive/archive.ts';
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
 import { dueTimeOfDated } from '../gtd/task-due.ts';
 import { taskPriorityOf } from '../gtd/task-priority.ts';
-import { firstDatedSql, firstDaySql, notOneDaySql, singleTextSql } from '../gtd/task-row.ts';
+import { firstDaySql, notOneDaySql, singleDatedSql, singleTextSql } from '../gtd/task-row.ts';
 import { splitWikiLinks, wikiLinkLabel } from '../markdown/wikilink.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { FILED_UNDER_KEY, PROJECT_TYPE } from '../types/para.ts';
@@ -57,7 +57,7 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `${REVIEW_TASKS_QUERY_MARK} SELECT f.path AS "path", f.title AS "title", f.modified AS "modified",`,
       `  ${singleText(TASK_KEYS.status)} AS "status",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
-      `  ${firstDatedSql(TASK_KEYS.due, 'f.path')} AS "dueAt",`,
+      `  ${singleDatedSql(TASK_KEYS.due, 'f.path')} AS "dueAt",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.focus)} AS "focus",`,
       `  ${notOneDay(TASK_KEYS.focus)} AS "focusIsOwn",`,

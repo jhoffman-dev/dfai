@@ -73,6 +73,9 @@ export function dueOfDated(dated: string): TaskDue {
  * value that holds no due, which such a calendar counts as unscheduled.
  */
 export function dueEventTime(value: unknown): EventTime | null {
+  // One plain written value only, as main placed notes: a list is not on the
+  // calendar, where a move would write one value over all of them.
+  if (!isOnePlainDue(value)) return null;
   const due = dueOf(value);
   if (due === null) return null;
   if (due.time === null) return { date: due.day, minutes: null };
@@ -164,6 +167,15 @@ export function movedDue(move: {
   const due = dueOf(move.start);
   if (due === null) return { start: move.start, end: null };
   return movedEvent({ ...move, start: due.time === null ? due.day : move.start });
+}
+
+/**
+ * Whether a task's due is one plain written value — not a list, a mapping, a
+ * number or a blank — which an action that changes or judges a due may read
+ * by the due rules. Any other value is left to what main did with it.
+ */
+export function isOnePlainDue(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 /**
