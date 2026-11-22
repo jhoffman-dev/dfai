@@ -141,7 +141,9 @@ test('the agenda shows what is overdue, then today', async ({ page }) => {
   await expect(overdue.getByRole('button', { name: 'overdue' })).toBeVisible();
   const today = page.getByRole('region', { name: 'Today, Tue, Sep 22, 2026' });
   await expect(today.getByRole('button', { name: 'errand' })).toBeVisible();
-  await expect(today.getByRole('button', { name: 'standup' })).toBeVisible();
+  // A task due at 09:00 is overdue at midday, as Today says (#928); due all day, it is today's.
+  await expect(overdue.getByRole('button', { name: 'standup' })).toBeVisible();
+  await expect(today.getByRole('button', { name: 'standup' })).toHaveCount(0);
   // Overdue is listed first, above today.
   const overdueTop = (await overdue.boundingBox())?.y ?? Infinity;
   const todayTop = (await today.boundingBox())?.y ?? -Infinity;
