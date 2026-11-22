@@ -46,15 +46,16 @@ export interface DueMoment {
 }
 
 /**
- * The items a due holds: each one written, a blank — empty, spaces, null —
- * being no item, as the index counts them (`singleDatedSql`).
+ * The items a due holds, as the indexer stores them (`toIndexableProperties`):
+ * a list flattened at any depth, each item a row; a blank — null, empty, spaces,
+ * an empty list — no item, as the index counts them (`singleDatedSql`). A
+ * mapping, a number or `true` is an item, and no text.
  */
 function dueEntries(value: unknown): readonly unknown[] {
-  const items: readonly unknown[] = Array.isArray(value) ? value : [value];
-  return items.filter(
-    (item) =>
-      item !== null && item !== undefined && !(typeof item === 'string' && item.trim() === ''),
-  );
+  if (Array.isArray(value)) return value.flatMap(dueEntries);
+  const blank =
+    value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+  return blank ? [] : [value];
 }
 
 /**

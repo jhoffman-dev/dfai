@@ -71,6 +71,14 @@ describe.each(EVERY_DUE_VALUE)('the panel, a due written $form', ({ value }) => 
         onChange={onChange}
       />,
     );
+    // A list holding lists is drawn whole, edited in the note's properties, as on main:
+    // no date or time field offered, so nothing is written from here.
+    if (document.querySelector('.props__structured') !== null) {
+      expect(screen.queryByLabelText(/^due time$/i)).toBeNull();
+      expect(screen.queryByLabelText(/^due$/i)).toBeNull();
+      cleanup();
+      return;
+    }
     const time = screen.getByLabelText(/^due time$/i) as HTMLInputElement;
     expect(time.value).toBe(want.time ?? '');
 
