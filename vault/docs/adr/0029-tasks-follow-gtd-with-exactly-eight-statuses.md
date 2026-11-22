@@ -358,7 +358,10 @@ and time. Nothing changes for a due that names only its day.
   the day ends). Anything the index does not date (`next Friday`,
   `2026-02-30`) is no due, as before; it is never an error.
 - **Time zone: the Mac's local wall-clock time, no zone in the file.** The
-  due rules measure against `Clock.localNow`, the Mac's zone. Timeblocks
+  due rules measure against `Clock.localNow`, the Mac's zone, everywhere but
+  the morning brief. The morning brief judges overdue on the clock its rule
+  runs on, which for `meeting-briefs` is the plan zone (`keepsCalendarClock`),
+  so it and Today differ only when the plan zone and the Mac's zone differ. Timeblocks
   are written on the _plan zone_ (ADR-0030's later addendum, ADR-0046): the
   primary Google calendar's zone, else the Mac's. That zone is a setting
   read from Google in the shell, not a clock port; the Today page, the API
@@ -415,15 +418,15 @@ and time. Nothing changes for a due that names only its day.
 **Who decides overdue, and which comes first.** One rule, `gtd/task-due.ts`
 (`isPastDue`, `compareDues`), everywhere it can be asked:
 
-| Surface                                                          | Overdue                            | Order                    |
-| ---------------------------------------------------------------- | ---------------------------------- | ------------------------ |
-| Today page (and `GET /v1/today`)                                 | the rule                           | the rule                 |
-| Weekly review (and `GET /v1/review`)                             | the rule                           | the rule                 |
-| Assistant open loops, brief, follow-ups (`/v1/assistant/*`, MCP) | the rule                           | —                        |
-| Morning brief (reads the assistant's `overdue`)                  | the rule                           | —                        |
-| Calendar agenda of tasks by `due`                                | the rule, for a due with no end    | the calendar's, by time  |
-| Calendar agenda of any other date                                | the calendar's: ended before today | the calendar's           |
-| Task tables and saved views (query language)                     | by day (`due < @today`)            | the same key as the rule |
+| Surface                                                          | Overdue                                       | Order                    |
+| ---------------------------------------------------------------- | --------------------------------------------- | ------------------------ |
+| Today page (and `GET /v1/today`)                                 | the rule                                      | the rule                 |
+| Weekly review (and `GET /v1/review`)                             | the rule                                      | the rule                 |
+| Assistant open loops, brief, follow-ups (`/v1/assistant/*`, MCP) | the rule                                      | —                        |
+| Morning brief (reads the assistant's `overdue`)                  | the rule, on the rule's clock (the plan zone) | —                        |
+| Calendar agenda of tasks by `due`                                | the rule, for a due with no end               | the calendar's, by time  |
+| Calendar agenda of any other date                                | the calendar's: ended before today            | the calendar's           |
+| Task tables and saved views (query language)                     | by day (`due < @today`)                       | the same key as the rule |
 
 **Known gaps.** The query language compares dates by day, so a saved view's
 `due < @today` cannot match Today's Overdue for a timed due today whose time
