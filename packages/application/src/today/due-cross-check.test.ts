@@ -8,11 +8,10 @@ import {
   isPastDue,
   judgedDue,
   linkingAmong,
-  loopTask,
   movedDue,
   weeklyReview,
 } from '@dfai/domain';
-import { DUE_FORM_DAY, EVERY_DUE_VALUE } from '@dfai/domain/testing';
+import { DUE_FORM_DAY, EVERY_DUE_VALUE, loopTask } from '@dfai/domain/testing';
 import { listInbox } from '../inbox/list-inbox.ts';
 import { readReviewSources } from '../review/review-reads.ts';
 import { fakeIndexPort, fakeVaultFs } from '../testing/fake-ports.ts';

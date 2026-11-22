@@ -29,3 +29,5 @@ export {
   type DueForm,
   type OddDueForm,
 } from './due-forms.ts';
+/** The assistant's open-loop item, for the due cross-check (PR #930): production reaches it inside the domain. */
+export { loopTask } from '../assistant/assistant-items.ts';

@@ -83,9 +83,32 @@ export const LISTED_ONE_FORMS: readonly {
   { form: `[${entry}, '']`, value: [entry, ''], as: entry },
 ]);
 
+/**
+ * A due written as the indexer flattens and trims it (`toIndexableProperties`):
+ * nested lists, padding, and non-text items beside a date. Each must read as
+ * the index stores it (PR #930).
+ */
+const TIMED = '2026-12-04T15:30';
+export const INDEXED_SHAPES: readonly { readonly form: string; readonly value: unknown }[] = [
+  { form: '[[x]]', value: [[TIMED]] },
+  { form: '[[x], []]', value: [[TIMED], []] },
+  { form: '[[x, y]]', value: [[TIMED, '2026-12-05']] },
+  { form: '[[], [x]]', value: [[], [TIMED]] },
+  { form: '[[[x]]]', value: [[[TIMED]]] },
+  { form: 'padded', value: ` ${TIMED} ` },
+  { form: '[padded]', value: [` ${TIMED} `] },
+  { form: '[x, null]', value: [TIMED, null] },
+  { form: '[null, x]', value: [null, TIMED] },
+  { form: '[x, a mapping]', value: [TIMED, { on: '2026-12-05' }] },
+  { form: '[x, a number]', value: [TIMED, 5] },
+  { form: '[x, true]', value: [TIMED, true] },
+  { form: '[a mapping]', value: [{ on: TIMED }] },
+];
+
 /** Every value the cross-check runs every surface over: the written forms, the odd ones, the lists of one. */
 export const EVERY_DUE_VALUE: readonly { readonly form: string; readonly value: unknown }[] = [
   ...DUE_FORMS.map(({ form, written }) => ({ form, value: written })),
   ...ODD_DUE_FORMS.map(({ form, value }) => ({ form, value })),
   ...LISTED_ONE_FORMS.map(({ form, value }) => ({ form, value })),
+  ...INDEXED_SHAPES,
 ];
