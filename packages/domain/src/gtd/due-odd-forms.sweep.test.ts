@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { linkingAmong } from '../assistant/citation.ts';
-import { dayOf, loopTask } from '../assistant/assistant-items.ts';
+import { loopTask } from '../assistant/assistant-items.ts';
 import { calendarEvents } from '../calendar/calendar-event.ts';
 import { assistDuplicate } from '../inbox/assist-duplicate.ts';
 import { assistHeld, writtenPropertiesOf } from '../inbox/assist-held.ts';
@@ -22,7 +22,7 @@ import { dueEventTime } from './task-due.ts';
 const PATH = 'Tasks/Probe.md';
 const NEXT_DAY = '2026-12-05';
 
-describe('the assistant’s items: as main read them', () => {
+describe('the assistant’s items: as Today judges them', () => {
   const context = {
     ...linkingAmong([createVaultPath(PATH)]),
     sources: new Map<string, string>(),
@@ -31,16 +31,15 @@ describe('the assistant’s items: as main read them', () => {
     time: '16:00',
   };
 
-  it.each(ODD_DUE_FORMS)('reads $form by its day as main did, and overdue by day', (form) => {
+  it.each(ODD_DUE_FORMS)('reads $form by its first dated day, overdue by day', (form) => {
     const loop = loopTask({
       row: { path: PATH, title: 'Probe', values: { status: 'next-action', due: form.value } },
       words: { key: 'status', done: 'done' },
       context,
     });
-    // Main: `dayOf` of the value as one line of text, overdue before the day asked about.
-    const main = dayOf(form.value);
-    expect(loop.due).toBe(main);
-    expect(loop.overdue).toBe(main !== null && main < context.day);
+    // As Today reads it from the index (on main too): the first dated day, no time.
+    expect(loop.due).toBe(form.indexedDay);
+    expect(loop.overdue).toBe(form.indexedDay !== null && form.indexedDay < context.day);
   });
 });
 

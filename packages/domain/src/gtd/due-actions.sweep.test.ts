@@ -40,8 +40,8 @@ describe('drag to another day on a task calendar (month, or the all-day strip; p
     expect(onCalendar(form)).toBe(form.day !== null);
     if (form.day === null) return;
     const write = movedDue({ start: form.written, end: null, days: 1, minutes: 0 });
-    expect(write.start).toBe(ON_NEXT_DAY[form.form]);
-    expect(write.start).not.toBe(form.written);
+    expect(write?.start).toBe(ON_NEXT_DAY[form.form]);
+    expect(write?.start).not.toBe(form.written);
   });
 });
 
@@ -66,7 +66,7 @@ describe('drag onto a clock time (week, three days, day)', () => {
     expect(event?.start.minutes !== null).toBe(form.time !== null);
     if (form.time === null) return;
     const write = movedDue({ start: form.written, end: null, days: 0, minutes: 60 });
-    expect(write.start).toBe(AN_HOUR_LATER[form.form]);
+    expect(write?.start).toBe(AN_HOUR_LATER[form.form]);
   });
 });
 

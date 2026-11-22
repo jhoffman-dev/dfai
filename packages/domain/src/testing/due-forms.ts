@@ -27,9 +27,8 @@ export const DUE_FORMS: readonly DueForm[] = [
 ];
 
 /**
- * A `due` that is not one plain written value (PR #930 audit): a list of
- * several entries, a list of one, a mapping, a number, `true`, an empty
- * string. What each surface reads it as is pinned beside it, as is what main
+ * A `due` that is not one entry (PR #930 audit): a list of several
+ * entries, a mapping, a number, `true`, an empty string. What each surface reads it as is pinned beside it, as is what main
  * did; anything that decides behaves as main did, or errs to asking.
  */
 export interface OddDueForm {
@@ -64,14 +63,29 @@ export const ODD_DUE_FORMS: readonly OddDueForm[] = [
     indexedTime: null,
   },
   { form: 'a list of words', value: ['soon', 'later'], indexedDay: null, indexedTime: null },
-  {
-    form: 'a list of one',
-    value: ['2026-12-04T15:30'],
-    indexedDay: DUE_FORM_DAY,
-    indexedTime: '15:30',
-  },
   { form: 'a mapping', value: { on: '2026-12-04' }, indexedDay: null, indexedTime: null },
   { form: 'a number', value: 20261204, indexedDay: null, indexedTime: null },
   { form: 'true', value: true, indexedDay: null, indexedTime: null },
   { form: 'an empty string', value: '', indexedDay: null, indexedTime: null },
+];
+
+/**
+ * A due written as a list whose one entry, blanks aside, is a due (PR #930):
+ * read, and acted on, exactly as that entry written alone.
+ */
+export const LISTED_ONE_FORMS: readonly {
+  readonly form: string;
+  readonly value: unknown;
+  readonly as: string;
+}[] = ['2026-12-04T15:30', '2026-12-04'].flatMap((entry) => [
+  { form: `[${entry}]`, value: [entry], as: entry },
+  { form: `['', ${entry}]`, value: ['', entry], as: entry },
+  { form: `[${entry}, '']`, value: [entry, ''], as: entry },
+]);
+
+/** Every value the cross-check runs every surface over: the written forms, the odd ones, the lists of one. */
+export const EVERY_DUE_VALUE: readonly { readonly form: string; readonly value: unknown }[] = [
+  ...DUE_FORMS.map(({ form, written }) => ({ form, value: written })),
+  ...ODD_DUE_FORMS.map(({ form, value }) => ({ form, value })),
+  ...LISTED_ONE_FORMS.map(({ form, value }) => ({ form, value })),
 ];

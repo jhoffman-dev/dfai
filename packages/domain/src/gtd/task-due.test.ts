@@ -4,6 +4,7 @@ import {
   dueAt,
   dueOf,
   dueOnDay,
+  judgedDue,
   dueTimeOfDated,
   dueWithTime,
   isPastDue,
@@ -61,8 +62,10 @@ describe('what a due is read as', () => {
     }
   });
 
-  it('is the first dated item of a list, as the index reads one', () => {
-    expect(dueOf(['soon', '2026-12-04T09:00', '2026-12-05'])).toEqual(at('2026-12-04', '09:00'));
+  it('is a list’s one entry, blanks aside; a list of several is judged by its first dated day', () => {
+    expect(dueOf(['', '2026-12-04T09:00'])).toEqual(at('2026-12-04', '09:00'));
+    expect(dueOf(['soon', '2026-12-04T09:00', '2026-12-05'])).toBeNull();
+    expect(judgedDue(['soon', '2026-12-04T09:00', '2026-12-05'])).toEqual(day('2026-12-04'));
   });
 
   it('reads an index row’s dated value, and none from a row that carries none', () => {
