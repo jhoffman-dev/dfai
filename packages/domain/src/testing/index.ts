@@ -20,3 +20,14 @@ export {
   TOBIAS_ID,
 } from './slack-answers.ts';
 export { EVERY_ASSIST_KIND } from './every-assist-kind.ts';
+export {
+  DUE_FORM_DAY,
+  DUE_FORMS,
+  EVERY_DUE_VALUE,
+  LISTED_ONE_FORMS,
+  ODD_DUE_FORMS,
+  type DueForm,
+  type OddDueForm,
+} from './due-forms.ts';
+/** The assistant's open-loop item, for the due cross-check (PR #930): production reaches it inside the domain. */
+export { loopTask } from '../assistant/assistant-items.ts';

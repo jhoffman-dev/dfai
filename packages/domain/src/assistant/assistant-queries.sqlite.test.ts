@@ -275,6 +275,7 @@ describe('compileFollowUpsQuery', () => {
       sources: new Map<string, string>(),
       hasBlock: () => false,
       day: '2026-10-12',
+      time: null,
     };
     expect(row && followUpTask(row, context).waitingDays).toBeNull();
     const dated = rows({ entity: TOBIAS }).find((each) => each.path === tobias);

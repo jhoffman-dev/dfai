@@ -27,6 +27,10 @@ export interface TaskCandidate {
   readonly status: GtdStatus | null;
   /** `YYYY-MM-DD`, or null. */
   readonly due: string | null;
+  /** The time of day its due names (#928), `HH:MM`; absent for a date-only due. */
+  readonly dueTime?: string;
+  /** True when its due is written as several entries: never the same as one (PR #930 audit). */
+  readonly dueMany?: boolean;
   /** True when a due date is written that does not read as one day. */
   readonly dueUnread: boolean;
   /** `YYYY-MM-DD`: the day it comes back into play; null when none is read. */

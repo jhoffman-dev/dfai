@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   createVaultPath,
+  dueOf,
+  dueRescheduled,
+  dueWithTime,
   formatPropertyDate,
+  isWallTime,
+  writtenDue,
   linkedNames,
   hasOpenQuote,
   listAsInput,
@@ -18,6 +23,7 @@ import {
   withLink,
   withoutLink,
   type PropertyDef,
+  type TaskDue,
   type VaultPath,
 } from '@dfai/domain';
 import { pillPaint } from './pill-paint.ts';
@@ -37,9 +43,16 @@ export interface PropertyRow {
   readonly error: string | null;
   /**
    * The field it is edited in, where it is not its kind's: `priority` for a
-   * task's 1 to 4, picked as None or P1 to P4 (#913). The caller decides.
+   * task's 1 to 4, picked as None or P1 to P4 (#913); `dueTime` for a task's
+   * due, a date with an optional time of day (#928). The caller decides.
    */
-  readonly editor?: 'priority';
+  readonly editor?: 'priority' | 'dueTime';
+  /**
+   * A task's due as the due rules read it (#928), where the row is one: what
+   * its date shows, so `T24:00` reads as its day as it does everywhere; null
+   * for one that holds no due, shown as written. The caller reads it.
+   */
+  readonly due?: TaskDue | null;
 }
 
 /** Makes a note of type `target` called `name`; resolves with the link to write. */
@@ -271,7 +284,20 @@ function PropertyEditor({
       // A task's priority (#913) is picked, P1 to P4 or none, rather than typed.
       return <NumberEditor {...props} />;
     case 'date':
-      return <DateEditor id={id} label={row.def.label} value={text} onChange={onChange} />;
+      return (
+        <>
+          <DateEditor
+            id={id}
+            label={row.def.label}
+            value={text}
+            onChange={onChange}
+            {...(row.due !== undefined && { due: row.due, written: row.value })}
+          />
+          {row.editor === 'dueTime' && (
+            <DueTimeEditor label={row.def.label} value={row.value} onChange={onChange} />
+          )}
+        </>
+      );
     case 'select':
       return <SelectEditor {...props} />;
     case 'multiSelect':
@@ -548,6 +574,80 @@ function TextEditor({ id, row, text, onChange }: EditorProps) {
 }
 
 /**
+ * A date as a person reads it. A task's due is shown as read (#928): its day,
+ * and its time only when it names a clock time; one that holds no due, as written.
+ */
+function shownDate(value: string, due: TaskDue | null | undefined): string {
+  if (due === undefined) return formatPropertyDate(value) ?? value;
+  return due === null ? value : (formatPropertyDate(writtenDue(due)) ?? value);
+}
+
+/**
+ * A due's time of day (#928), beside its date: the platform's time field,
+ * empty for a due that names only its day. Like the date, it writes when it
+ * is left or Enter is pressed, and only a whole time: a part erased puts the
+ * time back, and the time is taken off by its own Clear, which leaves the day.
+ */
+function DueTimeEditor({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  /** The due as written: one entry, a list of one included (`oneDueEntry`). */
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const held = dueOf(value)?.time ?? '';
+  const [draft, setDraft] = useState(held);
+  const [shownTime, setShownTime] = useState(held);
+  // A new value from the file replaces whatever was half-typed.
+  if (shownTime !== held) {
+    setShownTime(held);
+    setDraft(held);
+  }
+  const write = (time: string | null) => {
+    const next = dueWithTime(value, time);
+    if (next !== null && next !== value) onChange(next);
+  };
+  const commit = () => {
+    if (draft === held || !isWallTime(draft)) setDraft(held);
+    else write(draft);
+  };
+
+  return (
+    <span className="props__due-time">
+      <input
+        className="props__input props__time-input"
+        type="time"
+        aria-label={`${label} time`}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+          if (event.key === 'Escape' && draft !== held) {
+            event.preventDefault();
+            setDraft(held);
+          }
+        }}
+      />
+      {held !== '' && (
+        <button
+          type="button"
+          className="props__date-clear"
+          aria-label={`Clear time of ${label}`}
+          title="Clear time"
+          onClick={() => write(null)}
+        >
+          <Icon name="close" size={14} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+/**
  * A date read as "Tue, Sep 22, 2026", edited with the platform's date field.
  *
  * The field sits over the words, invisible until it has the focus — so a
@@ -564,13 +664,19 @@ function DateEditor({
   label,
   value,
   onChange,
+  due,
+  written,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: unknown) => void;
+  /** A task's due as read (`PropertyRow.due`): shown as the other surfaces show it. */
+  due?: TaskDue | null;
+  /** A task's due as written, which a new day is worked out from: a list of one too. */
+  written?: unknown;
 }) {
-  const day = value.slice(0, 10);
+  const day = due?.day ?? value.slice(0, 10);
   const [draft, setDraft] = useState(day);
   const [shownDay, setShownDay] = useState(day);
   // A new value from the file replaces whatever was half-typed.
@@ -578,11 +684,12 @@ function DateEditor({
     setShownDay(day);
     setDraft(day);
   }
-  const shown = value === '' ? null : (formatPropertyDate(value) ?? value);
+  const shown = value === '' ? null : shownDate(value, due);
 
   const commit = () => {
     if (draft === '' || draft === day) setDraft(day);
-    else onChange(withDatePart(value, draft));
+    // A task's due moves as the due rules move it (#928); any other date keeps what followed its day.
+    else onChange(due === undefined ? withDatePart(value, draft) : dueRescheduled(written, draft));
   };
 
   return (
