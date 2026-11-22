@@ -82,7 +82,7 @@ export function useTypeTable({
 
     let cancelled = false;
     setError(null);
-    runView({ index, query })
+    runView({ index, query, type })
       .then((found) => {
         if (!cancelled) setResult(found);
       })
@@ -95,7 +95,7 @@ export function useTypeTable({
     return () => {
       cancelled = true;
     };
-  }, [index, query, indexKey]);
+  }, [index, query, type, indexKey]);
 
   const toggleSort = useCallback((column: string) => {
     setSorts((current) => {

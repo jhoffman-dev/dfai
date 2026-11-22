@@ -5,6 +5,7 @@ import {
   formatPropertyDate,
   relativeDay,
   timeLabel,
+  type AgendaDues,
   type CalendarEvent,
   type PropertyKind,
 } from '@dfai/domain';
@@ -26,10 +27,13 @@ export function CalendarAgenda({
   kinds,
   ticks,
   onOpenNote,
+  dues,
 }: {
   events: readonly CalendarEvent[];
   anchor: string;
   today: string;
+  /** Given for a calendar of tasks by their due: Overdue is then said as Today says it. */
+  dues?: AgendaDues | undefined;
   /** The properties each row shows as chips, the view's date left out. */
   fields: readonly string[];
   kinds: Readonly<Record<string, PropertyKind>>;
@@ -45,6 +49,7 @@ export function CalendarAgenda({
     days,
     today,
     isDone: ticks?.isDone ?? NEVER_DONE,
+    dues,
   });
   const row = { fields, kinds, ticks, onOpenNote };
 

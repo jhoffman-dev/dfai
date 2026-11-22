@@ -16,6 +16,7 @@ import {
   type GroupCount,
   type NoteNames,
   type ObjectType,
+  type QueryReach,
   type QueryShape,
   type RowGroup,
   type SqlWidgetSpec,
@@ -26,6 +27,7 @@ import { messageWithoutPaths } from '../api/api-error.ts';
 import type { IndexPort } from '../index/ports.ts';
 import { runAtlasQuery } from '../query/run-atlas-query.ts';
 import { runSql } from '../query/run-sql.ts';
+import { viewColumnsOf } from '../query/run-view.ts';
 import {
   barsFor,
   barsInOrder,
@@ -128,10 +130,13 @@ export async function runWidget({
       return { widget, sql, data: readSql(widget.sql, result) };
     }
     const query = queryOf(widget);
-    const compiled = compileViewQuery(query, shapeOf(widget));
+    const reach = { viewColumns: viewColumnsOf(types, query.type) };
+    const compiled = compileViewQuery(query, shapeOf(widget), reach);
     sql = compiled.sql;
 
-    if (widget.kind === 'hero') return { widget, sql, data: await runHero(index, widget, query) };
+    if (widget.kind === 'hero') {
+      return { widget, sql, data: await runHero({ index, widget, query, reach }) };
+    }
 
     const result = await index.query(compiled.sql, compiled.parameters);
     return { widget, sql, data: read(widget, result, types) };
@@ -178,9 +183,19 @@ function shapeOf(widget: Widget): QueryShape {
  * A hero asks up to three questions of the same query: how many, how many of
  * those are the progress part, and how many per group. They run together.
  */
-async function runHero(index: IndexPort, widget: Widget, query: ViewQuery): Promise<HeroData> {
+async function runHero({
+  index,
+  widget,
+  query,
+  reach,
+}: {
+  index: IndexPort;
+  widget: Widget;
+  query: ViewQuery;
+  reach: QueryReach;
+}): Promise<HeroData> {
   const ask = async (asked: ViewQuery, shape: QueryShape): Promise<QueryResult> => {
-    const compiled = compileViewQuery(asked, shape);
+    const compiled = compileViewQuery(asked, shape, reach);
     return index.query(compiled.sql, compiled.parameters);
   };
   const { progress, groupBy } = widget;

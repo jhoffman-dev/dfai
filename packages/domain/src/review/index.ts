@@ -2,6 +2,7 @@ export {
   ACTIVE_PROJECT_STATUS,
   taskDeferral,
   MOVING_STATUSES,
+  nextDueTurnAmong,
   REVIEW_MOVES,
   REVIEW_DEFER_DAYS,
   reviewDeferral,
@@ -29,6 +30,7 @@ export {
   REVIEW_TASKS_QUERY_MARK,
   reviewProject,
   reviewSource,
+  reviewDueFields,
   reviewTask,
   waitingOnNames,
 } from './review-query.ts';

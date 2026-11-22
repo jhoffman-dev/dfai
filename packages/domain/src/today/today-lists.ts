@@ -1,6 +1,8 @@
 import { FINISHED_TASK_STATUS, GTD_STATUSES, type GtdStatus } from '../gtd/gtd-status.ts';
 import {
+  byDue,
   byOldestChange,
+  nextDueTurnAmong,
   byTitle,
   DAY_MS,
   isDeferred,
@@ -11,6 +13,7 @@ import {
   type ReviewProject,
   type ReviewTask,
 } from '../review/weekly-review.ts';
+import type { DueMoment } from '../gtd/task-due.ts';
 import type { VaultPath } from '../vault/vault-path.ts';
 import { focusStanding, laterChoiceOf } from './chosen.ts';
 
@@ -148,7 +151,7 @@ export function todayLists({
     .map(asListed({ at, choosing }));
   const sections = TODAY_SECTIONS.map((id) => {
     const claims = choosing || !CHOICE_SECTIONS.has(id) ? CLAIMS[id] : NONE;
-    const claimed = unclaimed.filter((task) => claims(task, at.today));
+    const claimed = unclaimed.filter((task) => claims(task, at));
     const taken = new Set(claimed);
     unclaimed = unclaimed.filter((task) => !taken.has(task));
     return { id, count: claimed.length, groups: GROUPS[id](claimed) };
@@ -177,12 +180,13 @@ const standingOf = (task: TodayTask, today: string) =>
   task.focusIsOwn === true ? 'none' : focusStanding({ focus: task.focus, today });
 
 /** What puts a task in each section, asked in {@link TODAY_SECTIONS} order. */
-const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, today: string) => boolean>> = {
-  chosen: (task, today) => standingOf(task, today) === 'today',
-  carriedOver: (task, today) => standingOf(task, today) === 'carried',
+const CLAIMS: Readonly<Record<TodaySectionId, (task: TodayTask, at: ReviewMoment) => boolean>> = {
+  chosen: (task, { today }) => standingOf(task, today) === 'today',
+  carriedOver: (task, { today }) => standingOf(task, today) === 'carried',
+  // A timed due today whose time has gone by is overdue (#928), claimed before Due today.
   overdue: isOverdue,
-  dueToday: (task, today) => task.due === today && promisesItsDay(task),
-  backToday: (task, today) =>
+  dueToday: (task, { today }) => task.due === today && promisesItsDay(task),
+  backToday: (task, { today }) =>
     task.defer !== null &&
     task.status !== null &&
     (task.defer === today || (task.defer < today && !LISTED_BY_STATUS.has(task.status))),
@@ -198,7 +202,7 @@ const GROUPS: Readonly<Record<TodaySectionId, (tasks: TodayTask[]) => TodayGroup
   chosen: (tasks) => together(tasks.sort(byDueThenTitle)),
   carriedOver: (tasks) => together(tasks.sort(byFocusThenTitle)),
   overdue: (tasks) => together(tasks.sort(byDueThenTitle)),
-  dueToday: (tasks) => together(tasks.sort(byTitle)),
+  dueToday: (tasks) => together(tasks.sort(byDueThenTitle)),
   backToday: (tasks) => together(tasks.sort(byDeferThenTitle)),
   inProgress: (tasks) => together(tasks.sort(byDueThenTitle)),
   nextActions: byProject,
@@ -275,12 +279,22 @@ function byFocusThenTitle(left: TodayTask, right: TodayTask): number {
   return (right.focus ?? '').localeCompare(left.focus ?? '') || byTitle(left, right);
 }
 
-/** The earliest day first; a task with no day after every task with one. */
+/**
+ * The earliest due first — within a day a date-only due before the timed
+ * ones, those by time (#928); a task with no due after every task with one.
+ */
 function byDueThenTitle(left: TodayTask, right: TodayTask): number {
-  if (left.due === null || right.due === null) {
-    return Number(left.due === null) - Number(right.due === null) || byTitle(left, right);
-  }
-  return left.due.localeCompare(right.due) || byTitle(left, right);
+  return byDue(left, right) || byTitle(left, right);
+}
+
+/**
+ * The next time of day a task on the page due today turns overdue (#928),
+ * `HH:MM`, after the wall time it was read at: when an open page must read
+ * again for the task to move. Null when none will today.
+ */
+export function nextDueTurn(page: TodayLists, at: DueMoment): string | null {
+  const tasks = page.sections.flatMap((section) => section.groups.flatMap((group) => group.tasks));
+  return nextDueTurnAmong(tasks, at);
 }
 
 /**

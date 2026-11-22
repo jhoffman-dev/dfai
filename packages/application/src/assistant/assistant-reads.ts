@@ -159,6 +159,7 @@ export async function itemContext({
   sourcePaths,
   followUps = [],
   day,
+  time,
 }: {
   reads: AssistantReads;
   /** The tasks and decisions whose `source` an item cites. */
@@ -166,13 +167,15 @@ export async function itemContext({
   /** Follow-ups, which carry their own `source`. */
   followUps?: readonly FollowUpRow[];
   day: string;
+  /** The wall time asked at, when `day` is the clock's today (`wallTimeOn`); null otherwise. */
+  time: string | null;
 }): Promise<WithProblems<ItemContext>> {
   const sources = await sourcesFor(reads.index, sourcePaths);
   const linking = linkingAmong(reads.notePaths);
   const written = [...sources.value.values(), ...followUps.map((row) => row.source)];
   const named = written.flatMap((source) => sourceBlockOf(source, linking.resolve) ?? []);
   const blocks = await blocksAmong(reads.index, named);
-  const context = { ...linking, sources: sources.value, day, hasBlock: blocks.value };
+  const context = { ...linking, sources: sources.value, day, time, hasBlock: blocks.value };
   return { value: context, problems: [...sources.problems, ...blocks.problems] };
 }
 

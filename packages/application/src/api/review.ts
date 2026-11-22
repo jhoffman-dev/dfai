@@ -18,11 +18,13 @@ export async function weeklyReviewRoute(request: VaultRequest): Promise<RouteRes
       `The index could not take the weekly review: ${messageWithoutPaths(error)}`,
     );
   });
+  // When the review reads again (#928) is the app's: it joins the contract with the API's slice of #912.
+  const answeredReview = omitted(review, ['nextDueTurn']);
   return {
     status: 200,
     body: {
       review: {
-        ...review,
+        ...answeredReview,
         staleWaiting: review.staleWaiting.map(answered),
         overdue: review.overdue.map(answered),
         untouchedSomeday: review.untouchedSomeday.map(answered),
@@ -49,20 +51,36 @@ export async function todayRoute(request: VaultRequest): Promise<RouteResult> {
     ...section,
     groups: section.groups.map((group) => ({ ...group, tasks: group.tasks.map(answered) })),
   }));
-  return { status: 200, body: { today: { ...today, sections } } };
+  // What the contract answers, by name: the wall time it was read at (#928)
+  // joins it with the API's slice of #912.
+  const { today: day, choosing, inbox, truncated, stalledProjects } = today;
+  return {
+    status: 200,
+    body: { today: { today: day, choosing, inbox, truncated, stalledProjects, sections } },
+  };
 }
 
 /**
  * What a task holds that the contract does not answer: the names its project
  * links by, which are the app's own, to read Today again by (#392), and its
- * priority, which joins the contract with the API's slice of #912.
+ * priority and its due's time (#928), which join the contract with the API's
+ * slice of #912: `due` stays the day.
  */
-const UNANSWERED: ReadonlySet<string> = new Set(['projectLinks', 'priority']);
+const UNANSWERED: ReadonlySet<string> = new Set(['projectLinks', 'priority', 'dueTime', 'dueAt']);
 
-type Unanswered = 'projectLinks' | 'priority';
+type Unanswered = 'projectLinks' | 'priority' | 'dueTime' | 'dueAt';
 
 /** A task as the contract answers it (`ApiReviewTask`). */
 function answered<Task extends ReviewTask>(task: Task): Omit<Task, Unanswered> {
   const entries = Object.entries(task).filter(([key]) => !UNANSWERED.has(key));
   return Object.fromEntries(entries) as Omit<Task, Unanswered>;
+}
+
+/** A read with the keys the contract does not answer left out. */
+function omitted<Read extends object, Key extends keyof Read>(
+  read: Read,
+  keys: readonly Key[],
+): Omit<Read, Key> {
+  const left = Object.entries(read).filter(([key]) => !(keys as readonly string[]).includes(key));
+  return Object.fromEntries(left) as Omit<Read, Key>;
 }
