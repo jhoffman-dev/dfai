@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import {
   createVaultPath,
   dueOf,
+  dueRescheduled,
   dueWithTime,
   formatPropertyDate,
   isWallTime,
@@ -683,7 +684,8 @@ function DateEditor({
 
   const commit = () => {
     if (draft === '' || draft === day) setDraft(day);
-    else onChange(withDatePart(value, draft));
+    // A task's due moves as the due rules move it (#928); any other date keeps what followed its day.
+    else onChange(due === undefined ? withDatePart(value, draft) : dueRescheduled(value, draft));
   };
 
   return (

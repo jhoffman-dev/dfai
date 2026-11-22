@@ -358,7 +358,12 @@ and time. Nothing changes for a due that names only its day.
   the day ends) — on Today, the review, the Inbox, the assistant, the
   properties panel, and a calendar of tasks by `due`, which places its notes
   through the same reader (`dueEventTime`) and shows it all day. Other
-  calendars read their dates as written, as before (`T24:00` is not placed). Anything the index does not date (`next Friday`,
+  calendars read their dates as written, as before (`T24:00` is not placed). Every
+  action on such a due reads it the same way: dragged on a task calendar, or
+  given a new day in the properties panel or on an Inbox row, it moves as a
+  date-only due and is written as the new day, `YYYY-MM-DD` — the unreadable
+  time is dropped, since the person has just rescheduled it. A repeating
+  task's roll, which is the app's write, keeps it as written. Anything the index does not date (`next Friday`,
   `2026-02-30`) is no due, as before; it is never an error.
 - **Time zone: the Mac's local wall-clock time, no zone in the file.** The
   due rules measure against `Clock.localNow`, the Mac's zone, everywhere but

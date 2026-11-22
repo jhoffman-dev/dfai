@@ -10,7 +10,7 @@ import {
   TASK_TYPE,
   WAITING_STATUS,
 } from '../gtd/gtd-status.ts';
-import { dueOnDay } from '../gtd/task-due.ts';
+import { dueRescheduled } from '../gtd/task-due.ts';
 import { isTaskNote, taskRuleChanges } from '../gtd/task-rules.ts';
 import { TASK_TYPE_FILE, type ClarifyVocabulary } from '../gtd/task-type.ts';
 import { wikiLinkTargetFor } from '../markdown/resolve-wikilink.ts';
@@ -118,7 +118,7 @@ function taskChanges({
     if (day !== null && !isDay(day)) return { refused: `“${day}” is not a day (YYYY-MM-DD).` };
     // An Inbox row's new day keeps the due's time (#928); a caller's day is that day alone.
     const kept = key === TASK_KEYS.due && keepsDueTime === true && day !== null;
-    changes[key] = kept ? dueOnDay(properties[key], day) : day;
+    changes[key] = kept ? dueRescheduled(properties[key], day) : day;
   }
   // Who it waits on is written only on a task that is, or is being made, Waiting: a
   // person picked and then a change of mind about Waiting leaves nobody behind. Taking

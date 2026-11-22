@@ -14,6 +14,7 @@
  * (it compares `value_date` by day in SQL; #932).
  */
 import { clockLabel, readEventTime, type EventTime } from '../calendar/calendar-event.ts';
+import { movedEvent, type EventWrite } from '../calendar/event-move.ts';
 import { indexablePropertiesOf } from '../index/property-value.ts';
 import { TASK_KEYS, TASK_TYPE } from './gtd-status.ts';
 
@@ -135,6 +136,34 @@ export function dueOnDay(value: unknown, day: string): string {
   if (typeof value !== 'string' || dueOf(value) === null) return day;
   const written = value.trim();
   return `${day}${written.slice(10)}`;
+}
+
+/**
+ * A due the person moves to another day — in the properties panel, on an
+ * Inbox row: its time of day kept as written; one the rules read as no time
+ * (`T24:00`) is dropped, since it was just rescheduled. A value that is no
+ * due becomes the day picked.
+ */
+export function dueRescheduled(value: unknown, day: string): string {
+  const due = dueOf(value);
+  return due === null || due.time === null ? day : dueOnDay(value, day);
+}
+
+/**
+ * A due dragged on a calendar of tasks by due (`readsTaskDue`), as the due
+ * rules read it: one with a time moves on the clock in its own shape
+ * (`movedEvent`); one with none — a day, `T24:00` — moves by days as a day,
+ * written `YYYY-MM-DD`. Its end, where the view has one, moves with it.
+ */
+export function movedDue(move: {
+  start: string;
+  end: string | null;
+  days: number;
+  minutes: number;
+}): EventWrite {
+  const due = dueOf(move.start);
+  if (due === null) return { start: move.start, end: null };
+  return movedEvent({ ...move, start: due.time === null ? due.day : move.start });
 }
 
 /**

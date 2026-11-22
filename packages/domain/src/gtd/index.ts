@@ -61,6 +61,8 @@ export {
   dueEventTime,
   dueOf,
   dueOnDay,
+  dueRescheduled,
+  movedDue,
   dueOfDated,
   dueTimeOfDated,
   dueWithTime,

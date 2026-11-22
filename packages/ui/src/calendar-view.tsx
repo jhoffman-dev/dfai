@@ -3,6 +3,7 @@ import {
   calendarEvents,
   clockLabel,
   dueEventTime,
+  movedDue,
   movedEvent,
   rangeDays,
   resizedEnd,
@@ -38,9 +39,12 @@ function useGestures({
   onReschedule,
   onCreate,
   holdingRef,
+  taskDues,
 }: {
   dateKey: string;
   endKey: string | null;
+  /** A calendar of tasks by due: a move is the due rules' (`movedDue`), as its placing is. */
+  taskDues: boolean;
   onOpenNote: (path: string) => void;
   onReschedule: (write: CalendarWrite) => void;
   onCreate: ((args: { value: string; name: string }) => void) | undefined;
@@ -52,8 +56,8 @@ function useGestures({
       start: text(event.values[dateKey]) ?? '',
       end: endKey === null ? null : text(event.values[endKey]),
     });
-    const moved = (event: CalendarEvent, by: ClockGesture) =>
-      movedEvent({ ...valuesOf(event), ...by });
+    const move = taskDues ? movedDue : movedEvent;
+    const moved = (event: CalendarEvent, by: ClockGesture) => move({ ...valuesOf(event), ...by });
     const resized = (event: CalendarEvent, minutes: number) =>
       resizedEnd({ event, ...valuesOf(event), minutes });
     return {
@@ -72,7 +76,7 @@ function useGestures({
         holdingRef.current = held;
       },
     };
-  }, [dateKey, endKey, onOpenNote, onReschedule, onCreate, holdingRef]);
+  }, [dateKey, endKey, onOpenNote, onReschedule, onCreate, holdingRef, taskDues]);
 }
 
 /**
@@ -138,7 +142,15 @@ export function CalendarView({
       }),
     [rows, dateKey, endKey, taskDues],
   );
-  const gestures = useGestures({ dateKey, endKey, onOpenNote, onReschedule, onCreate, holdingRef });
+  const gestures = useGestures({
+    dateKey,
+    endKey,
+    onOpenNote,
+    onReschedule,
+    onCreate,
+    holdingRef,
+    taskDues,
+  });
   const chips = useMemo(() => fields.filter((key) => key !== dateKey), [fields, dateKey]);
   const { range, anchor } = calendar;
 
