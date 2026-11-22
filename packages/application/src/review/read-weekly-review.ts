@@ -1,5 +1,5 @@
-import { weeklyReview, type WeeklyReview } from '@dfai/domain';
-import type { Clock } from '../ports.ts';
+import { nextDueTurnAmong, weeklyReview, type WeeklyReview } from '@dfai/domain';
+import { reviewMomentOf, type ReviewClock } from './review-moment.ts';
 import {
   readReviewSources,
   type InboxCount,
@@ -14,6 +14,11 @@ export interface WeeklyReviewReport extends WeeklyReview {
   readonly inbox: InboxCount;
   /** The index held rows back, so a section may be missing items. */
   readonly truncated: boolean;
+  /**
+   * The next time of day a task due today turns overdue (#928), `HH:MM`:
+   * when a review left open reads again. Null when none will today.
+   */
+  readonly nextDueTurn?: string | null;
 }
 
 /**
@@ -27,9 +32,15 @@ export async function readWeeklyReview({
   ...reads
 }: ReviewReadPorts &
   InboxRule & {
-    clock: Pick<Clock, 'today' | 'now'>;
+    clock: ReviewClock;
   }): Promise<WeeklyReviewReport> {
   const { tasks, projects, inbox, truncated } = await readReviewSources(reads);
-  const at = { today: clock.today(), now: clock.now() };
-  return { ...weeklyReview({ tasks, projects, at }), today: at.today, inbox, truncated };
+  const at = reviewMomentOf(clock);
+  return {
+    ...weeklyReview({ tasks, projects, at }),
+    today: at.today,
+    inbox,
+    truncated,
+    nextDueTurn: nextDueTurnAmong(tasks, at),
+  };
 }

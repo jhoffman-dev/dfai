@@ -30,7 +30,7 @@ export {
   sourcesOf,
 } from './assistant-queries.ts';
 export type { FollowUpRow } from './assistant-queries.ts';
-export { datedNote } from './assistant-items.ts';
+export { datedNote, loopTask } from './assistant-items.ts';
 export type {
   AnsweredSection,
   CitedDecision,

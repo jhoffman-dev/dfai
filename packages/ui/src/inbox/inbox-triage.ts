@@ -49,6 +49,8 @@ export function clarificationOf(task: InboxTask, draft: InboxDraft): Clarificati
       draft.waitingOn !== task.waitingOn && { waitingOn: draft.waitingOn }),
     ...(defer !== undefined && { defer }),
     ...(due !== undefined && { due }),
+    // The row says a new day keeps the due's time (#928).
+    ...(due !== undefined && due !== null && task.dueTime !== undefined && { keepsDueTime: true }),
     ...(draft.priority !== undefined &&
       draft.priority !== heldPriority(task) && { priority: draft.priority }),
   };

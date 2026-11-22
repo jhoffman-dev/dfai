@@ -101,6 +101,33 @@ describe('GET /v1/today', () => {
     expect(api.writes).toEqual([]);
   });
 
+  it('answers a timed due by its day alone, the time left for the API’s slice of #912 (#928)', async () => {
+    // The fixture's wall clock reads 09:00: a due at 08:00 today has passed.
+    const files = {
+      ...FILES,
+      'Tasks/Early call.md': note(['type: task', 'status: next-action', `due: ${TODAY}T08:00`]),
+    };
+    const query = atlasQueryIndex({ markdown: fakeMarkdown(), files, modified: MODIFIED });
+    const api = apiFixture({ files, index: { query } });
+
+    const today = bodyOf(await api.send(ROUTE))['today'] as Record<string, unknown>;
+    const sections = today['sections'] as Section[];
+    const overdue = sections.find((section) => section.id === 'overdue');
+    const early = overdue?.groups
+      .flatMap((group) => group.tasks)
+      .find((task) => task['path'] === 'Tasks/Early call.md');
+    expect(early).toMatchObject({ due: TODAY });
+    expect(early !== undefined && Object.hasOwn(early, 'dueTime')).toBe(false);
+    expect(Object.keys(today).sort()).toEqual([
+      'choosing',
+      'inbox',
+      'sections',
+      'stalledProjects',
+      'today',
+      'truncated',
+    ]);
+  });
+
   it('says the index could not answer, without the machine’s paths', async () => {
     const api = apiFixture({
       index: {

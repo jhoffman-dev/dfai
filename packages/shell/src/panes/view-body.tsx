@@ -10,6 +10,7 @@ import {
   newNoteLabel,
   savedViewSummary,
   viewTabs,
+  readsTaskDue,
   type BoardRow,
   type SavedViewSummary,
   type VaultPath,
@@ -499,6 +500,7 @@ function ViewCalendar({
       onReschedule={view.reschedule}
       onCreate={view.addOnDate}
       planner={planner}
+      taskDues={readsTaskDue({ typeName: view.type?.name ?? null, dateKey })}
       {...(ticks !== undefined && { ticks })}
     />,
   );

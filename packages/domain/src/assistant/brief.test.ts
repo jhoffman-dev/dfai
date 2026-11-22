@@ -45,6 +45,7 @@ function context(sources: Record<string, string> = {}): ItemContext {
     sources: new Map(Object.entries(sources)),
     hasBlock: () => true,
     day: DAY,
+    time: null,
   };
 }
 

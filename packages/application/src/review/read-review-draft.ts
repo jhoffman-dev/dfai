@@ -7,7 +7,7 @@ import {
   type LocalTime,
   type ReviewDraftData,
 } from '@dfai/domain';
-import type { Clock } from '../ports.ts';
+import type { ReviewClock } from './review-moment.ts';
 import { readWeeklyReview } from './read-weekly-review.ts';
 import { rowsOf, type ReviewReadPorts } from './review-reads.ts';
 
@@ -22,15 +22,23 @@ export async function readReviewDraft({
   week,
   ...reads
 }: ReviewReadPorts & {
-  clock: Pick<Clock, 'today' | 'now'>;
+  clock: ReviewClock;
   /** The slot the draft is for, and the wall clock at `clock.now()`. */
   week: { slot: LocalTime; localNow: LocalTime };
 }): Promise<ReviewDraftData> {
   const now = clock.now();
   const today = clock.today();
+  const localNow = clock.localNow?.();
   const window = reviewDraftWindow({ ...week, now });
   const [report, done, meetings] = await Promise.all([
-    readWeeklyReview({ clock: { today: () => today, now: () => now }, ...reads }),
+    readWeeklyReview({
+      clock: {
+        today: () => today,
+        now: () => now,
+        ...(localNow !== undefined && { localNow: () => localNow }),
+      },
+      ...reads,
+    }),
     rowsOf(reads.index, compileReviewDoneQuery(window.since, window)),
     rowsOf(reads.index, compileReviewMeetingsQuery(window)),
   ]);

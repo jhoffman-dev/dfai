@@ -1,7 +1,8 @@
 import { outsideArchiveSql } from '../archive/archive.ts';
 import { FINISHED_TASK_STATUS, gtdStatusOf, TASK_KEYS, TASK_TYPE } from '../gtd/gtd-status.ts';
+import { dueTimeOfDated } from '../gtd/task-due.ts';
 import { taskPriorityOf } from '../gtd/task-priority.ts';
-import { firstDaySql, notOneDaySql, singleTextSql } from '../gtd/task-row.ts';
+import { firstDaySql, notOneDaySql, singleDatedSql, singleTextSql } from '../gtd/task-row.ts';
 import { splitWikiLinks, wikiLinkLabel } from '../markdown/wikilink.ts';
 import type { CompiledQuery } from '../query/view-query.ts';
 import { FILED_UNDER_KEY, PROJECT_TYPE } from '../types/para.ts';
@@ -56,6 +57,7 @@ export function compileReviewTasksQuery(): CompiledQuery {
       `${REVIEW_TASKS_QUERY_MARK} SELECT f.path AS "path", f.title AS "title", f.modified AS "modified",`,
       `  ${singleText(TASK_KEYS.status)} AS "status",`,
       `  ${firstDay(TASK_KEYS.due)} AS "due",`,
+      `  ${singleDatedSql(TASK_KEYS.due, 'f.path')} AS "dueAt",`,
       `  ${firstDay(TASK_KEYS.defer)} AS "defer",`,
       `  ${firstDay(TASK_KEYS.focus)} AS "focus",`,
       `  ${notOneDay(TASK_KEYS.focus)} AS "focusIsOwn",`,
@@ -150,6 +152,7 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     title: String(row['title'] ?? ''),
     status: gtdStatusOf(row['status']),
     due: textOrNull(row['due']),
+    ...reviewDueFields(row['dueAt']),
     defer: textOrNull(row['defer']),
     focus: textOrNull(row['focus']),
     focusIsOwn: Number(row['focusIsOwn']) === 1,
@@ -166,6 +169,16 @@ export function reviewTask(row: Readonly<Record<string, unknown>>): ReviewTask {
     // NULL where the vault cannot tell when a file changed (ADR-0053).
     modified: row['modified'] === null ? null : Number(row['modified']) || 0,
   };
+}
+
+/**
+ * A due's time and its text as dated (#928), where it is more than its day:
+ * a date-only due carries neither.
+ */
+export function reviewDueFields(dated: unknown): { dueTime?: string; dueAt?: string } {
+  if (typeof dated !== 'string' || dated.length <= 10) return {};
+  const time = dueTimeOfDated(dated);
+  return { dueAt: dated, ...(time !== null && { dueTime: time }) };
 }
 
 /** A row of {@link compileReviewProjectsQuery}, as the review reads it. */
