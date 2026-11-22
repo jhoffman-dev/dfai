@@ -62,11 +62,12 @@ describe('listCondition', () => {
     expect(lookup({ operator: 'isEmpty' }).parameters).toEqual(['people']);
   });
 
-  it('compares the one item a note holds as the cell is compared, by IS', () => {
-    expect(lookup({ operator: 'is', value: '[[Mara Quill]]' }).sql).toBe(
-      `(SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS ?`,
-    );
-    expect(lookup({ operator: 'isNot', value: '[[Mara Quill]]' }).sql).toMatch(/\) IS NOT \?$/);
+  it('asks whether the note holds the value as its one item', () => {
+    expect(lookup({ operator: 'is', value: '[[Mara Quill]]' })).toEqual({
+      sql: `EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid))`,
+      parameters: ['people', '[[Mara Quill]]'],
+    });
+    expect(lookup({ operator: 'isNot', value: '[[Mara Quill]]' }).sql).toMatch(/^NOT EXISTS /);
   });
 
   it('leaves out, rather than keeps, the notes holding an item for is empty', () => {
@@ -79,6 +80,11 @@ describe('listCondition', () => {
       expect(lookup({ operator: 'contains', value })).toEqual({ sql: null, parameters: [] });
     }
     expect(lookup({ operator: 'is', value: 'a, b' }).sql).toBeNull();
+    // LIKE reads a pattern only up to a NUL: `a\0b` would ask for `a` alone (#929).
+    expect(lookup({ operator: 'contains', value: 'a\u0000b' }).sql).toBeNull();
+    expect(lookup({ operator: 'is', value: 'a\u0000b' }).sql).toBeNull();
+    // A cell is never '', so `is ''` is left to the cell, which keeps nothing.
+    expect(lookup({ operator: 'is', value: '' }).sql).toBeNull();
     expect(lookup({ operator: 'is', value: 'a,b' }).sql).not.toBeNull();
   });
 
@@ -122,7 +128,8 @@ describe('compileViewQuery with the view’s columns (#923)', () => {
 
   it('compares a tag without regard to case, its # and spaces left off', () => {
     const { sql, parameters } = compiled({ key: 'tags', operator: 'is', value: ' #Errand ' });
-    expect(sql).toContain(') IS ? COLLATE NOCASE ELSE "tags" IS ? COLLATE NOCASE END');
+    expect(sql).toContain('p.value_text = ? COLLATE NOCASE AND NOT EXISTS');
+    expect(sql).toContain('ELSE "tags" IS ? COLLATE NOCASE END');
     expect(parameters).toEqual(['tags', 'Errand', 'Errand', 10]);
   });
 

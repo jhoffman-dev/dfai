@@ -71,7 +71,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// as each holds two people or more (#923).
 const MEETING_TABLE_PERSON_IS: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
-WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS ? ELSE "people" IS ? END
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "people" IS ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -79,7 +79,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// A list `is` its one item, every meeting matching.
 const MEETING_IS_ALL: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
-WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''companies'' AND p.value_text <> '''') AS "companies"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS ? ELSE "companies" IS ? END
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''companies'' AND p.value_text <> '''') AS "companies"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "companies" IS ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -87,7 +87,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// A list `is not` one item, every meeting matching (each holds two or more).
 const MEETING_IS_NOT_ALL: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
-WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS NOT ? ELSE "people" IS NOT ? END
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN NOT EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "people" IS NOT ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -95,7 +95,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// A list `is not` its one item, no meeting matching.
 const MEETING_IS_NOT_NONE: &str = r#"SELECT "path", "title", "date", "start", "end", "kind", "provider", "external_id", "people", "companies", "project", "tasks", "decisions", "atlas_import_outcome", "atlas_import_error", "atlas_duplicate_of", "attendees", "follow_up", "rating", "topics", "atlas_summary_digest", "atlas_summary_of", "atlas_summary_model"
 FROM "v_meeting"
-WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''companies'' AND p.value_text <> '''') AS "companies"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text <> '') IS NOT ? ELSE "companies" IS NOT ? END
+WHERE "path" IN (SELECT "path" FROM "v_meeting" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''companies'' AND p.value_text <> '''') AS "companies"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_meeting' COLLATE NOCASE) THEN NOT EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_meeting"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "companies" IS NOT ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -212,7 +212,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// The books, `is` one person.
 const BOOK_IS: &str = r#"SELECT "path", "title", "people", "companies"
 FROM "v_book"
-WHERE "path" IN (SELECT "path" FROM "v_book" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_book' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_book"."path" AND p.key = ? AND p.value_text <> '') IS ? ELSE "people" IS ? END
+WHERE "path" IN (SELECT "path" FROM "v_book" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_book' COLLATE NOCASE) THEN EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_book"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "people" IS ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -220,7 +220,7 @@ ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
 /// The books, `is not` one person.
 const BOOK_IS_NOT: &str = r#"SELECT "path", "title", "people", "companies"
 FROM "v_book"
-WHERE "path" IN (SELECT "path" FROM "v_book" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_book' COLLATE NOCASE) THEN (SELECT CASE WHEN count(*) = 1 THEN max(p.value_text) END FROM props AS p WHERE p.path = "v_book"."path" AND p.key = ? AND p.value_text <> '') IS NOT ? ELSE "people" IS NOT ? END
+WHERE "path" IN (SELECT "path" FROM "v_book" WHERE substr("path", 1, 7) <> '.atlas/' AND lower(substr("path", 1, 8)) <> 'archive/' AND CASE WHEN (SELECT instr(sql, '(SELECT group_concat(p.value_text, '', '' ORDER BY p.idx, p.rowid) FROM props AS p WHERE p.path = n.path AND p.key = ''people'' AND p.value_text <> '''') AS "people"') > 0 FROM sqlite_master WHERE type = 'view' AND name = 'v_book' COLLATE NOCASE) THEN NOT EXISTS (SELECT 1 FROM props AS p WHERE p.path = "v_book"."path" AND p.key = ? AND p.value_text = ? AND NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)) ELSE "people" IS NOT ? END
   ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC
   LIMIT ?)
 ORDER BY NULLIF("title", '') ASC NULLS LAST, "path" ASC"#;
@@ -686,25 +686,25 @@ const BOUNDS: [Bound; 22] = [
         per_note: 130,
         share: 0.6,
     },
-    // `is`, none matching: each note's items counted, about 102 a note.
+    // `is`, none matching: a seek on the note's value, about 82 a note.
     Bound {
         statement: MEETING_TABLE_PERSON_IS,
-        per_note: 125,
+        per_note: 105,
         share: 0.5,
     },
-    // `is`, every meeting matching: about 107 a note.
+    // `is`, every meeting matching: the seek and a look for a second item, about 111 a note.
     Bound {
         statement: MEETING_IS_ALL,
         per_note: 130,
         share: 0.6,
     },
-    // `is not`, every meeting matching: about 138 a note.
+    // `is not`, every meeting matching: about 118 a note.
     Bound {
         statement: MEETING_IS_NOT_ALL,
-        per_note: 165,
+        per_note: 145,
         share: 0.75,
     },
-    // `is not`, none matching: about 71 a note.
+    // `is not`, none matching: about 75 a note.
     Bound {
         statement: MEETING_IS_NOT_NONE,
         per_note: 90,

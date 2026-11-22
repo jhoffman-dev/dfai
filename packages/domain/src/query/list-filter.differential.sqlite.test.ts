@@ -311,6 +311,10 @@ const FILTER_VALUES: readonly (string | number | boolean)[] = [
   '#Errand',
   ' errand ',
   'payroll, hiring',
+  // LIKE reads a pattern only up to a NUL, so these go to the cell (#929).
+  'a\u0000b',
+  'Mara\u0000Quill',
+  '[[Mara Quill]]\u0000',
   0,
   false,
 ];

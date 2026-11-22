@@ -10,6 +10,7 @@ import {
   type ObjectType,
   type QueryFilter,
   type QueryShape,
+  type ViewQuery,
 } from '@dfai/domain';
 import { sqliteWasm } from './in-memory-web-index.ts';
 
@@ -33,6 +34,10 @@ const LISTS = {
   companies: { kind: 'relation', target: 'company', many: true },
   decisions: { kind: 'relation', target: 'decision', many: true },
   tags: { kind: 'multiSelect', options: [] },
+  // Held by every other meeting, one in twenty, and none (#929's sparse keys).
+  reviewers: { kind: 'text', many: true },
+  guests: { kind: 'text', many: true },
+  visitors: { kind: 'text', many: true },
 };
 const MEETING = parseObjectType({
   name: 'meeting',
@@ -50,7 +55,10 @@ const mainView = (select: string) =>
 
 type Row = [string, string, number, string];
 
-/** A meeting: 2-7 people (each an attendee), one company, a tag, no decisions. */
+/**
+ * A meeting: 2-7 people (each an attendee), one company, a tag, no decisions;
+ * a reviewer on every other one, a guest on one in twenty, no visitors.
+ */
 function meetingRows(at: number): Row[] {
   const path = `meetings/Meeting ${at}.md`;
   const rows: Row[] = [
@@ -65,6 +73,8 @@ function meetingRows(at: number): Row[] {
     rows.push([path, 'people', index, `[[${person}]]`]);
     rows.push([path, 'attendees', index, `${person.split(' ')[0]?.toLowerCase()}@example.com`]);
   }
+  if (at % 2 === 0) rows.push([path, 'reviewers', 0, 'Mara Quill']);
+  if (at % 20 === 0) rows.push([path, 'guests', 0, 'Mara Quill']);
   return rows;
 }
 
@@ -98,6 +108,8 @@ async function vaultOf(meetings: number) {
   prop.finalize();
   database.exec('ANALYZE');
   const specs = viewSpecsFor([MEETING, BOOK]);
+  // main's cells, or nothing would be compared: the rewrite must have matched.
+  for (const { select } of specs) expect(mainView(select)).not.toBe(select);
   const viewsAs = (main: boolean) => {
     for (const { name, select } of specs) {
       database.exec(`DROP VIEW IF EXISTS "v_${name}"`);
@@ -118,9 +130,16 @@ async function vaultOf(meetings: number) {
     statement.finalize();
     return steps;
   };
-  /** Steps of main's SQL and of the new, for one filter over one type. */
-  const mainAndNew = (type: ObjectType, filter: QueryFilter, shape: QueryShape = {}) => {
-    const query = { ...typeTableQuery(type), filters: [filter] };
+  /** Steps of main's SQL and of the new, for filters (and sorts) over one type. */
+  const mainAndNew = (
+    type: ObjectType,
+    asked: QueryFilter | Pick<ViewQuery, 'filters' | 'sorts'>,
+    shape: QueryShape = {},
+  ) => {
+    const query = {
+      ...typeTableQuery(type),
+      ...('key' in asked ? { filters: [asked] } : asked),
+    };
     viewsAs(true);
     const main = stepsOf(compileViewQuery(query, shape));
     viewsAs(false);
@@ -147,20 +166,57 @@ const MATCHING: readonly [string, QueryFilter][] = [
   ['is not empty, all', { key: 'people', operator: 'isNotEmpty' }],
   ['is not empty, none', { key: 'decisions', operator: 'isNotEmpty' }],
   ['a tag is, a seventh', { key: 'tags', operator: 'is', value: 'T1' }],
+  ...(['reviewers', 'guests', 'visitors'] as const).flatMap((key): [string, QueryFilter][] => {
+    const held = { reviewers: 'half', guests: 'one in twenty', visitors: 'none' }[key];
+    return [
+      [`contains, ${key} on ${held}`, { key, operator: 'contains', value: 'Mara' }],
+      [`is, ${key} on ${held}`, { key, operator: 'is', value: 'Mara Quill' }],
+      [`is not, ${key} on ${held}`, { key, operator: 'isNot', value: 'Mara Quill' }],
+      [`is empty, ${key} on ${held}`, { key, operator: 'isEmpty' }],
+      [`is not empty, ${key} on ${held}`, { key, operator: 'isNotEmpty' }],
+    ];
+  }),
+];
+
+const MARA: QueryFilter = { key: 'people', operator: 'contains', value: 'Mara' };
+
+/** Filters together, and with sorts: each list filter's cost added to what else the statement reads. */
+const COMBINED: readonly [string, Pick<ViewQuery, 'filters' | 'sorts'>][] = [
+  [
+    'two lists',
+    { filters: [MARA, { key: 'attendees', operator: 'contains', value: 'iris' }], sorts: [] },
+  ],
+  [
+    'one list twice',
+    { filters: [MARA, { key: 'people', operator: 'isNot', value: '[[Iris Vale]]' }], sorts: [] },
+  ],
+  ['sorted by the same list', { filters: [MARA], sorts: [{ key: 'people', direction: 'desc' }] }],
+  ['sorted by another list', { filters: [MARA], sorts: [{ key: 'attendees', direction: 'asc' }] }],
+  ['sorted by a single value', { filters: [MARA], sorts: [{ key: 'start', direction: 'asc' }] }],
 ];
 
 const SHAPES: readonly [string, QueryShape][] = [
   ['page', {}],
   ['count', { aggregate: { kind: 'count', column: null } }],
+  ['chart by people', { groupBy: 'people' }],
+  ['chart by kind', { groupBy: 'kind' }],
 ];
 
 describe('a list filter asked of the items costs no more than main’s (#923, #929)', () => {
   for (const meetings of [5_000, 20_000]) {
-    it(`over ${meetings} meetings, every operator, matching all or none`, async () => {
+    it(`over ${meetings} meetings, every operator, matching all, half, a few or none, alone and together`, async () => {
       const vault = await vaultOf(meetings);
       for (const [name, filter] of MATCHING) {
         for (const [shaped, shape] of SHAPES) {
           const { main, now } = vault.mainAndNew(MEETING, filter, shape);
+          expect(now, `${name}, ${shaped}: ${now} against main's ${main}`).toBeLessThanOrEqual(
+            withinMain(main),
+          );
+        }
+      }
+      for (const [name, asked] of COMBINED) {
+        for (const [shaped, shape] of SHAPES) {
+          const { main, now } = vault.mainAndNew(MEETING, asked, shape);
           expect(now, `${name}, ${shaped}: ${now} against main's ${main}`).toBeLessThanOrEqual(
             withinMain(main),
           );

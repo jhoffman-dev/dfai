@@ -55,9 +55,11 @@ export function listColumnOf(
  * the comma, which a pattern without a comma or a wildcard cannot match, or
  * only the space after it, which then begins the match. LIKE folds the case
  * of ASCII letters alone, so neither character has another case to match.
+ * LIKE reads a pattern only up to a NUL, so `a\0b` asks for `a` alone, a
+ * pattern that may match across items: one holding a NUL goes to the cell.
  */
 const matchesWithinAnItem = (pattern: string): boolean =>
-  !/[,%_]/.test(pattern) && !pattern.startsWith(' ');
+  !/[,%_\0]/.test(pattern) && !pattern.startsWith(' ');
 
 export interface ListFilter {
   readonly column: TypeViewColumn;
@@ -86,7 +88,7 @@ export function listCondition(
 ): string | null {
   const lookup = listLookup(filter);
   if (lookup === null) return null;
-  parameters.push(filter.column.key, ...(lookup.binds === undefined ? [] : [lookup.binds]));
+  parameters.push(...lookup.binds(filter.column.key));
   return lookup.sql(`${site.table}."path"`);
 }
 
@@ -98,6 +100,8 @@ export function listCondition(
  * `sqlite_master` a statement, which SQLite makes once.
  */
 export function viewJoinsItemsSql(column: TypeViewColumn, site: ListFilterSite): string {
+  // Written in rather than bound: the key (listColumnOf) and the view's name
+  // (viewNameFor) are both plain identifiers, and the cell's quotes are doubled.
   const cell = `${listCellSql(column.key)} AS "${column.key}"`.replaceAll("'", "''");
   return `(SELECT instr(sql, '${cell}') > 0 FROM sqlite_master WHERE type = 'view' AND name = '${site.view}' COLLATE NOCASE)`;
 }
@@ -105,8 +109,16 @@ export function viewJoinsItemsSql(column: TypeViewColumn, site: ListFilterSite):
 interface Lookup {
   /** The condition, over the note whose path is `path`. */
   readonly sql: (path: string) => string;
-  readonly binds?: string;
+  /** What it binds, in the order it reads them, given the key. */
+  readonly binds: (key: string) => string[];
 }
+
+/** The note holds no other item of the key than `p`. */
+const ONLY_ITEM =
+  "NOT EXISTS (SELECT 1 FROM props AS q WHERE q.path = p.path AND q.key = p.key AND q.value_text <> '' AND q.rowid <> p.rowid)";
+
+const keyOnly = (key: string) => [key];
+const keyThen = (value: string) => (key: string) => [key, value];
 
 /** The note holds an item of the key that is also `also`; or, `keeps` false, holds none. */
 const holding =
@@ -116,13 +128,13 @@ const holding =
 
 function listLookup({ operator, value, ignoreCase = false }: ListFilter): Lookup | null {
   // A cell is null or holds an item: the joined text of no items is never ''.
-  if (operator === 'isEmpty') return { sql: holding('', false) };
-  if (operator === 'isNotEmpty') return { sql: holding('') };
+  if (operator === 'isEmpty') return { sql: holding('', false), binds: keyOnly };
+  if (operator === 'isNotEmpty') return { sql: holding(''), binds: keyOnly };
   if (value === undefined) return null;
   switch (operator) {
     case 'contains':
       return matchesWithinAnItem(value)
-        ? { sql: holding(" AND p.value_text LIKE '%' || ? || '%'"), binds: value }
+        ? { sql: holding(" AND p.value_text LIKE '%' || ? || '%'"), binds: keyThen(value) }
         : null;
     case 'is':
     case 'isNot':
@@ -137,16 +149,17 @@ function listLookup({ operator, value, ignoreCase = false }: ListFilter): Lookup
 
 /**
  * Two items or more join with `', '`, so a cell equal to text without one is
- * one item, that text: the note's one item, compared as the cell is — `IS`,
- * so a note of no item or of two is not it. NOCASE folds ASCII letters only,
- * so the same holds without regard to case. A cell is never '', and no item is.
+ * one item, that text: the note holds an item equal to it and no other item.
+ * A cell is never '', so nor is the value asked (an empty one is left to the
+ * cell), and then the item found is no blank either — which is why the seek
+ * need not ask: one test fewer a note, where few notes hold the key (#929).
+ * NOCASE folds ASCII letters only, so the same holds without regard to case.
  */
 function exactly(value: string, keeps: boolean, ignoreCase: boolean): Lookup | null {
-  if (value.includes(', ')) return null;
+  // A value holding a NUL is left to the cell, so no comparison of one rests on how SQLite reads it.
+  if (value === '' || value.includes(', ') || value.includes('\0')) return null;
   const collate = ignoreCase ? ' COLLATE NOCASE' : '';
-  const only = (path: string) => itemsOf(path, 'CASE WHEN count(*) = 1 THEN max(p.value_text) END');
-  return {
-    sql: (path) => `(${only(path)}) IS${keeps ? '' : ' NOT'} ?${collate}`,
-    binds: value,
-  };
+  const only = (path: string) =>
+    `EXISTS (SELECT 1 FROM props AS p WHERE p.path = ${path} AND p.key = ? AND p.value_text = ?${collate} AND ${ONLY_ITEM})`;
+  return { sql: (path) => `${keeps ? '' : 'NOT '}${only(path)}`, binds: keyThen(value) };
 }
