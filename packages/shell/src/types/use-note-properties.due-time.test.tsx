@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { createVaultPath, parseObjectType, type ObjectType, type VaultPath } from '@dfai/domain';
 import { fakeIndexPort, fakeMarkdown, fakeVaultFs, type OpenNote } from '@dfai/application';
-import { DUE_FORMS } from '@dfai/domain/testing';
+import { DUE_FORMS, ODD_DUE_FORMS } from '@dfai/domain/testing';
 import { useNoteProperties } from './use-note-properties.ts';
 
 const links = { fs: fakeVaultFs(), markdown: fakeMarkdown(), notePaths: [] as VaultPath[] };
@@ -67,5 +67,21 @@ describe('useNoteProperties: a task’s due row, every written form (#928, PR #9
     expect(row?.due?.day ?? null).toBe(form.day);
     expect(row?.due?.time ?? null).toBe(form.time);
     expect(row?.editor).toBe(form.day === null ? undefined : 'dueTime');
+  });
+});
+
+describe('useNoteProperties: a task’s due that is not one plain value (PR #930 audit)', () => {
+  it.each(ODD_DUE_FORMS)('edits $form as main did: no time field, no due reading', (form) => {
+    const open = {
+      path: createVaultPath('Tasks/Call.md'),
+      properties: { type: 'task', due: form.value },
+    } as unknown as OpenNote;
+    const { result, unmount } = renderHook(() =>
+      useNoteProperties({ note: open, types: [TASK], index, links }),
+    );
+    const row = result.current.rows.find((each) => each.def.key === 'due');
+    unmount();
+    expect(row?.editor).toBeUndefined();
+    expect(row !== undefined && 'due' in row).toBe(false);
   });
 });

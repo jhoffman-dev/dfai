@@ -25,3 +25,50 @@ export const DUE_FORMS: readonly DueForm[] = [
   { form: 'T15:3', written: '2026-12-04T15:3', day: null, time: null },
   { form: 'a bare T', written: '2026-12-04T', day: null, time: null },
 ];
+
+/**
+ * A `due` that is not one plain written value (PR #930 audit): a list of
+ * several entries, a list of one, a mapping, a number, `true`, an empty
+ * string. What each surface reads it as is pinned beside it, as is what main
+ * did; anything that decides behaves as main did, or errs to asking.
+ */
+export interface OddDueForm {
+  readonly form: string;
+  readonly value: unknown;
+  /** The day Today, the review and the Inbox read from the index (the first dated entry), as main did. */
+  readonly indexedDay: string | null;
+  /** The time Today and the review show (the first dated entry's). */
+  readonly indexedTime: string | null;
+}
+
+export const ODD_DUE_FORMS: readonly OddDueForm[] = [
+  {
+    form: 'a list of two dates',
+    value: ['2026-12-04T15:30', '2026-12-05'],
+    indexedDay: DUE_FORM_DAY,
+    indexedTime: '15:30',
+  },
+  {
+    form: 'a list, a date then words',
+    value: ['2026-12-04', 'soon'],
+    indexedDay: DUE_FORM_DAY,
+    indexedTime: null,
+  },
+  {
+    form: 'a list, words then a date',
+    value: ['soon', '2026-12-04T09:00'],
+    indexedDay: DUE_FORM_DAY,
+    indexedTime: '09:00',
+  },
+  { form: 'a list of words', value: ['soon', 'later'], indexedDay: null, indexedTime: null },
+  {
+    form: 'a list of one',
+    value: ['2026-12-04T15:30'],
+    indexedDay: DUE_FORM_DAY,
+    indexedTime: '15:30',
+  },
+  { form: 'a mapping', value: { on: '2026-12-04' }, indexedDay: null, indexedTime: null },
+  { form: 'a number', value: 20261204, indexedDay: null, indexedTime: null },
+  { form: 'true', value: true, indexedDay: null, indexedTime: null },
+  { form: 'an empty string', value: '', indexedDay: null, indexedTime: null },
+];
