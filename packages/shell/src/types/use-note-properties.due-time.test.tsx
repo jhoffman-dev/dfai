@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { createVaultPath, parseObjectType, type ObjectType, type VaultPath } from '@dfai/domain';
 import { fakeIndexPort, fakeMarkdown, fakeVaultFs, type OpenNote } from '@dfai/application';
+import { DUE_FORMS } from '@dfai/domain/testing';
 import { useNoteProperties } from './use-note-properties.ts';
 
 const links = { fs: fakeVaultFs(), markdown: fakeMarkdown(), notePaths: [] as VaultPath[] };
@@ -49,5 +50,22 @@ describe('useNoteProperties: a task’s due row (#928)', () => {
   it('takes none on a note that is not a task', () => {
     const invoice = parseObjectType({ name: 'invoice', properties: { due: 'date' } });
     expect(editorOf([invoice], { type: 'invoice', due: '2026-12-04' }, 'due')).toBeUndefined();
+  });
+});
+
+describe('useNoteProperties: a task’s due row, every written form (#928, PR #930 review)', () => {
+  it.each(DUE_FORMS)('reads $form as the due rules do, and offers a time only on a day', (form) => {
+    const open = {
+      path: createVaultPath('Tasks/Call.md'),
+      properties: { type: 'task', due: form.written },
+    } as unknown as OpenNote;
+    const { result, unmount } = renderHook(() =>
+      useNoteProperties({ note: open, types: [TASK], index, links }),
+    );
+    const row = result.current.rows.find((each) => each.def.key === 'due');
+    unmount();
+    expect(row?.due?.day ?? null).toBe(form.day);
+    expect(row?.due?.time ?? null).toBe(form.time);
+    expect(row?.editor).toBe(form.day === null ? undefined : 'dueTime');
   });
 });
